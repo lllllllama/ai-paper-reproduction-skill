@@ -83,6 +83,10 @@ python scripts/test_readme_selection.py
 python scripts/test_output_rendering.py
 ```
 
+## Release notes
+
+- See [CHANGELOG.md](/D:/test_projects/ai-paper-reproduction-skill/CHANGELOG.md) for the current `v1` release summary and validation scope.
+
 ## Current scope
 
 - README-first reproduction of AI paper repositories
