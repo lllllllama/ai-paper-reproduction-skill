@@ -1,0 +1,117 @@
+{
+  "schema_version": "1.0",
+  "cases": [
+    {
+      "id": "main_end_to_end_cn",
+      "type": "positive",
+      "prompt": "请用 ai-paper-reproduction 帮我复现这个 AI 论文仓库，先读 README，优先跑 documented inference 或 eval，并输出 repro_outputs。",
+      "expected_any": ["ai-paper-reproduction"],
+      "expected_top": "ai-paper-reproduction",
+      "forbidden": ["repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "repo_scan_only_en",
+      "type": "positive",
+      "prompt": "Scan this repository, read the README and config files, extract documented commands, and recommend the smallest credible reproduction target.",
+      "expected_any": ["repo-intake-and-plan"],
+      "expected_top": "repo-intake-and-plan",
+      "forbidden": ["env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "env_setup_only_en",
+      "type": "positive",
+      "prompt": "Prepare a conda-first environment and asset plan for this AI repo, including checkpoint, dataset, and cache path assumptions before any run.",
+      "expected_any": ["env-and-assets-bootstrap"],
+      "expected_top": "env-and-assets-bootstrap",
+      "forbidden": ["repo-intake-and-plan", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "run_and_report_only_en",
+      "type": "positive",
+      "prompt": "Run the selected documented inference command, capture evidence, and write SUMMARY.md, COMMANDS.md, LOG.md, and status.json.",
+      "expected_any": ["minimal-run-and-audit"],
+      "expected_top": "minimal-run-and-audit",
+      "forbidden": ["repo-intake-and-plan", "env-and-assets-bootstrap", "paper-context-resolver"]
+    },
+    {
+      "id": "paper_gap_only_en",
+      "type": "positive",
+      "prompt": "The README is missing the exact evaluation split. Use the linked paper only to resolve that reproduction-critical detail and record any conflict.",
+      "expected_any": ["paper-context-resolver"],
+      "expected_top": "paper-context-resolver",
+      "forbidden": ["repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit"]
+    },
+    {
+      "id": "paper_summary_negative",
+      "type": "negative",
+      "prompt": "Summarize this paper, explain the novelty, compare it with prior work, and give me a related work overview.",
+      "expected_any": [],
+      "expected_top": null,
+      "forbidden": ["ai-paper-reproduction", "repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "generic_conda_negative",
+      "type": "negative",
+      "prompt": "Create a conda environment for my computer vision project and suggest some useful packages.",
+      "expected_any": [],
+      "expected_top": null,
+      "forbidden": ["ai-paper-reproduction", "repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "generic_benchmark_design_negative",
+      "type": "negative",
+      "prompt": "Design a new benchmark suite and a training plan for a multimodal model from scratch.",
+      "expected_any": [],
+      "expected_top": null,
+      "forbidden": ["ai-paper-reproduction", "repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "boundary_repo_scan_vs_main",
+      "type": "boundary",
+      "prompt": "Read this AI repo README and files and tell me the documented inference, eval, and train commands. Do not run anything yet.",
+      "expected_any": ["repo-intake-and-plan"],
+      "expected_top": "repo-intake-and-plan",
+      "forbidden": ["minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "boundary_setup_vs_main",
+      "type": "boundary",
+      "prompt": "Before we execute anything, figure out the conda environment, checkpoint paths, and dataset locations for this README-documented repo.",
+      "expected_any": ["env-and-assets-bootstrap"],
+      "expected_top": "env-and-assets-bootstrap",
+      "forbidden": ["minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "boundary_run_vs_main",
+      "type": "boundary",
+      "prompt": "We already selected the documented command. Just run it conservatively and write the standardized outputs.",
+      "expected_any": ["minimal-run-and-audit"],
+      "expected_top": "minimal-run-and-audit",
+      "forbidden": ["repo-intake-and-plan", "env-and-assets-bootstrap", "paper-context-resolver"]
+    },
+    {
+      "id": "boundary_paper_vs_summary",
+      "type": "boundary",
+      "prompt": "Do not summarize the paper. Only resolve which dataset split and evaluation protocol the reproduction should use because the README is ambiguous.",
+      "expected_any": ["paper-context-resolver"],
+      "expected_top": "paper-context-resolver",
+      "forbidden": ["repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit"]
+    },
+    {
+      "id": "negative_non_repo_debugging",
+      "type": "negative",
+      "prompt": "Debug this PyTorch training loop bug and refactor the model code for readability.",
+      "expected_any": [],
+      "expected_top": null,
+      "forbidden": ["ai-paper-reproduction", "repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    },
+    {
+      "id": "negative_dataset_download_only",
+      "type": "negative",
+      "prompt": "Download COCO 2017 and organize it for later experiments.",
+      "expected_any": [],
+      "expected_top": null,
+      "forbidden": ["ai-paper-reproduction", "repo-intake-and-plan", "env-and-assets-bootstrap", "minimal-run-and-audit", "paper-context-resolver"]
+    }
+  ]
+}

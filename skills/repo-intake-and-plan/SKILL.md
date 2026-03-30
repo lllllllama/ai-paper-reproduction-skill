@@ -1,6 +1,6 @@
 ---
 name: repo-intake-and-plan
-description: Scan an AI repository for README-first reproduction evidence, extract documented commands, classify inference-eval-training candidates, and return a minimum trustworthy reproduction plan to the main skill.
+description: Sub-skill for the intake phase of README-first AI repo reproduction. Use when the task is specifically to scan a repository, read README and common project files, extract documented commands, classify inference or evaluation or training candidates, and return a minimum trustworthy plan to the main skill. Do not use for environment setup, asset download, command execution, final reporting, or general paper discussion.
 ---
 
 # repo-intake-and-plan

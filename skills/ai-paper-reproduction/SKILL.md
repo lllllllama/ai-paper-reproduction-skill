@@ -1,6 +1,6 @@
 ---
 name: ai-paper-reproduction
-description: Orchestrate README-first reproduction for AI paper repositories by scanning the repo, choosing the smallest trustworthy documented target, coordinating environment and run sub-skills, enforcing conservative patch rules, and writing a standardized `repro_outputs/` bundle.
+description: Main orchestration skill for README-first reproduction of AI paper repositories. Use when the user wants an end-to-end minimal trustworthy reproduction flow that reads the repo, selects the smallest documented inference or evaluation target, coordinates setup and execution sub-skills, enforces conservative patch rules, and writes the standardized `repro_outputs/` bundle. Do not use for paper summary, generic environment setup, isolated repo scanning, or standalone command execution without orchestration.
 ---
 
 # ai-paper-reproduction

@@ -1,6 +1,6 @@
 ---
 name: paper-context-resolver
-description: Resolve reproduction-critical gaps from primary paper sources only when README and repository files are insufficient, while preserving README-first behavior and explicitly recording any conflicts.
+description: Optional sub-skill for README-first AI repo reproduction. Use only when README and repository files leave a reproduction-critical gap and the task is to resolve a narrow paper detail such as dataset split, preprocessing, evaluation protocol, checkpoint mapping, or runtime assumption from primary paper sources while recording conflicts. Do not use for general paper summary, repo scanning, environment setup, command execution, or replacing README guidance by default.
 ---
 
 # paper-context-resolver

@@ -1,6 +1,6 @@
 ---
 name: env-and-assets-bootstrap
-description: Prepare a conservative conda-first environment and asset layout for AI repo reproduction by reading README-first evidence, resolving checkpoints and dataset paths, and avoiding unsafe or speculative setup steps.
+description: Sub-skill for environment and asset preparation in README-first AI repo reproduction. Use when the task is specifically to prepare a conservative conda-first environment, resolve checkpoints or datasets or cache paths from README-first evidence, and produce setup assumptions before execution. Do not use for repo scanning, full orchestration, paper interpretation, or final run reporting.
 ---
 
 # env-and-assets-bootstrap
