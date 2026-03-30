@@ -17,6 +17,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def is_chinese(user_language: str) -> bool:
+    return user_language.lower().startswith("zh")
+
+
+def human_text(en: str, zh: str, user_language: str) -> str:
+    return zh if is_chinese(user_language) else en
+
+
 def run_json(script: Path, args: List[str]) -> Dict[str, Any]:
     """Run a helper script and parse its JSON stdout."""
     command = [sys.executable, str(script), *args]
@@ -68,6 +76,7 @@ def choose_goal(commands: List[Dict[str, Any]]) -> Dict[str, Any]:
             "documented_command": best.get("command", ""),
             "command_source": best.get("source", "readme"),
             "documented_command_kind": best.get("kind", "run"),
+            "documented_command_section": best.get("section"),
         }
 
     return {
@@ -76,6 +85,7 @@ def choose_goal(commands: List[Dict[str, Any]]) -> Dict[str, Any]:
         "documented_command": "",
         "command_source": "none",
         "documented_command_kind": "none",
+        "documented_command_section": None,
     }
 
 
@@ -83,6 +93,7 @@ def maybe_run_command(
     repo_path: Path,
     command: str,
     timeout: int,
+    user_language: str,
 ) -> Dict[str, Any]:
     """Optionally execute the selected command in a conservative way."""
     if not command:
@@ -90,7 +101,11 @@ def maybe_run_command(
             "status": "not_run",
             "documented_command_status": "not_run",
             "execution_log": [],
-            "main_blocker": "No documented command was extracted from README.",
+            "main_blocker": human_text(
+                "No documented command was extracted from README.",
+                "未从 README 中提取到已文档化命令。",
+                user_language,
+            ),
         }
 
     try:
@@ -107,14 +122,22 @@ def maybe_run_command(
             "status": "blocked",
             "documented_command_status": "blocked",
             "execution_log": [f"Command failed before launch: {exc}"],
-            "main_blocker": f"Executable not found for documented command: {exc}",
+            "main_blocker": human_text(
+                f"Executable not found for documented command: {exc}",
+                f"已文档化命令缺少可执行程序：{exc}",
+                user_language,
+            ),
         }
     except subprocess.TimeoutExpired:
         return {
             "status": "partial",
             "documented_command_status": "partial",
             "execution_log": [f"Command timed out after {timeout} seconds."],
-            "main_blocker": f"Selected documented command did not finish within {timeout} seconds.",
+            "main_blocker": human_text(
+                f"Selected documented command did not finish within {timeout} seconds.",
+                f"选定的已文档化命令未在 {timeout} 秒内完成。",
+                user_language,
+            ),
         }
 
     combined = []
@@ -127,11 +150,15 @@ def maybe_run_command(
     if return_code == 0:
         status = "success"
         cmd_status = "success"
-        blocker = "None."
+        blocker = human_text("None.", "无。", user_language)
     else:
         status = "partial"
         cmd_status = "partial"
-        blocker = f"Selected documented command exited with code {return_code}."
+        blocker = human_text(
+            f"Selected documented command exited with code {return_code}.",
+            f"选定的已文档化命令以退出码 {return_code} 结束。",
+            user_language,
+        )
 
     return {
         "status": status,
@@ -165,17 +192,61 @@ def build_context(
     notes.extend(run_data.get("execution_log", []))
 
     result_summary = (
-        f"Selected goal `{chosen['selected_goal']}` from README evidence."
+        human_text(
+            f"Selected goal `{chosen['selected_goal']}` from README evidence.",
+            f"已根据 README 证据选择目标 `{chosen['selected_goal']}`。",
+            user_language,
+        )
         if chosen["documented_command"]
-        else "No documented runnable command was extracted. Repo intake was completed."
+        else human_text(
+            "No documented runnable command was extracted. Repo intake was completed.",
+            "未提取到可运行的已文档化命令。仓库 intake 已完成。",
+            user_language,
+        )
     )
 
     if run_selected and status == "success":
-        result_summary = "Selected documented command finished successfully."
+        result_summary = human_text(
+            "Selected documented command finished successfully.",
+            "选定的已文档化命令已成功完成。",
+            user_language,
+        )
     elif run_selected and status == "partial":
-        result_summary = "Selected documented command started but did not complete cleanly."
+        result_summary = human_text(
+            "Selected documented command started but did not complete cleanly.",
+            "选定的已文档化命令已启动，但未干净完成。",
+            user_language,
+        )
     elif run_selected and status == "blocked":
-        result_summary = "Selected documented command could not be launched."
+        result_summary = human_text(
+            "Selected documented command could not be launched.",
+            "选定的已文档化命令无法启动。",
+            user_language,
+        )
+
+    section = chosen.get("documented_command_section")
+    command_notes = [
+        human_text(
+            f"README path: {scan_data.get('readme_path') or 'not found'}",
+            f"README 路径：{scan_data.get('readme_path') or 'not found'}",
+            user_language,
+        ),
+        human_text(
+            f"Detected top-level entries: {', '.join(structure.get('top_level', [])) or 'none'}",
+            f"检测到的顶层条目：{', '.join(structure.get('top_level', [])) or 'none'}",
+            user_language,
+        ),
+    ]
+    if chosen["documented_command"]:
+        command_notes.append(
+            human_text(
+                f"Main run label: documented from README ({chosen.get('command_source', 'readme')})"
+                + (f", section `{section}`" if section else ""),
+                f"主运行标签：来自 README 的 documented（{chosen.get('command_source', 'readme')}）"
+                + (f"，章节 `{section}`" if section else ""),
+                user_language,
+            )
+        )
 
     return {
         "schema_version": "1.0",
@@ -189,42 +260,102 @@ def build_context(
         "documented_command_status": documented_status,
         "documented_command": chosen["documented_command"] or "None extracted",
         "documented_command_kind": chosen.get("documented_command_kind", "none"),
+        "documented_command_source": chosen.get("command_source", "none"),
+        "documented_command_section": chosen.get("documented_command_section"),
         "result_summary": result_summary,
-        "main_blocker": run_data.get("main_blocker", "No blocker recorded."),
-        "next_action": "Prepare environment and assets, then retry the documented command."
-        if status in {"partial", "blocked", "not_run"}
-        else "Review outputs and continue with the next documented verification step.",
+        "main_blocker": run_data.get(
+            "main_blocker",
+            human_text("No blocker recorded.", "未记录阻塞项。", user_language),
+        ),
+        "next_action": (
+            human_text(
+                "Prepare environment and assets, then retry the documented command.",
+                "先准备环境与资源，再重试该已文档化命令。",
+                user_language,
+            )
+            if status in {"partial", "blocked", "not_run"}
+            else human_text(
+                "Review outputs and continue with the next documented verification step.",
+                "检查输出后继续下一步已文档化验证。",
+                user_language,
+            )
+        ),
         "setup_commands": [
-            "conda env create -f environment.yml",
-            "conda activate <env-name>",
+            {"label": "adapted", "command": "conda env create -f environment.yml"},
+            {"label": "adapted", "command": "conda activate <env-name>"},
         ],
         "asset_commands": [
-            "# Add README-documented dataset and checkpoint preparation commands here.",
+            {
+                "label": "inferred",
+                "command": "# Add README-documented dataset and checkpoint preparation commands here.",
+            },
         ],
-        "run_commands": [chosen["documented_command"]] if chosen["documented_command"] else [],
+        "run_commands": (
+            [{"label": "documented", "command": chosen["documented_command"]}]
+            if chosen["documented_command"]
+            else []
+        ),
         "verification_commands": [
-            "# Add metric check, artifact check, or smoke verification command here.",
+            {
+                "label": "inferred",
+                "command": "# Add metric check, artifact check, or smoke verification command here.",
+            },
         ],
-        "command_notes": [
-            f"README path: {scan_data.get('readme_path') or 'not found'}",
-            f"Detected top-level entries: {', '.join(structure.get('top_level', [])) or 'none'}",
-        ],
+        "command_notes": command_notes,
         "timeline": [
-            "Scanned repository structure and key metadata files.",
-            "Extracted README code blocks and shell-like commands.",
-            f"Selected `{chosen['selected_goal']}` as the smallest trustworthy target.",
-            "Execution step was skipped." if not run_selected else "Attempted the selected documented command.",
+            human_text(
+                "Scanned repository structure and key metadata files.",
+                "已扫描仓库结构和关键元数据文件。",
+                user_language,
+            ),
+            human_text(
+                "Extracted README code blocks and shell-like commands.",
+                "已提取 README 中的代码块和 shell 风格命令。",
+                user_language,
+            ),
+            human_text(
+                f"Selected `{chosen['selected_goal']}` as the smallest trustworthy target.",
+                f"已将 `{chosen['selected_goal']}` 选为最小可信目标。",
+                user_language,
+            ),
+            human_text(
+                "Execution step was skipped." if not run_selected else "Attempted the selected documented command.",
+                "已跳过执行步骤。" if not run_selected else "已尝试选定的已文档化命令。",
+                user_language,
+            ),
         ],
         "assumptions": [
-            "README remains the primary source of truth.",
-            "Environment creation should prefer conda-style isolation.",
+            human_text(
+                "README remains the primary source of truth.",
+                "README 仍是主要事实来源。",
+                user_language,
+            ),
+            human_text(
+                "Environment creation should prefer conda-style isolation.",
+                "环境创建应优先采用 conda 式隔离。",
+                user_language,
+            ),
         ],
         "evidence": [
-            f"Detected files: {', '.join(scan_data.get('detected_files', [])) or 'none'}",
-            f"Command categories: {json.dumps(command_data.get('counts', {}), ensure_ascii=False)}",
-            f"Selected command kind: {chosen.get('documented_command_kind', 'none')}",
+            human_text(
+                f"Detected files: {', '.join(scan_data.get('detected_files', [])) or 'none'}",
+                f"检测到的文件：{', '.join(scan_data.get('detected_files', [])) or 'none'}",
+                user_language,
+            ),
+            human_text(
+                f"Command categories: {json.dumps(command_data.get('counts', {}), ensure_ascii=False)}",
+                f"命令分类：{json.dumps(command_data.get('counts', {}), ensure_ascii=False)}",
+                user_language,
+            ),
+            human_text(
+                f"Selected command kind: {chosen.get('documented_command_kind', 'none')}",
+                f"已选命令类型：{chosen.get('documented_command_kind', 'none')}",
+                user_language,
+            ),
         ],
-        "blockers": [run_data.get("main_blocker", "None.")],
+        "blockers": [
+            run_data.get("main_blocker", human_text("None.", "无。", user_language))
+        ],
         "notes": notes,
         "patches_applied": False,
         "patch_branch": "",
@@ -277,10 +408,14 @@ def main() -> int:
         "status": "not_run",
         "documented_command_status": "not_run",
         "execution_log": [],
-        "main_blocker": "Execution was not requested.",
+        "main_blocker": human_text(
+            "Execution was not requested.",
+            "未请求执行。",
+            args.user_language,
+        ),
     }
     if args.run_selected:
-        run_data = maybe_run_command(repo_path, chosen["documented_command"], args.timeout)
+        run_data = maybe_run_command(repo_path, chosen["documented_command"], args.timeout, args.user_language)
 
     context = build_context(
         repo_path=repo_path,
