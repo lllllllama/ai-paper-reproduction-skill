@@ -35,13 +35,51 @@ COMMAND_PREFIXES = (
 
 def classify(command: str) -> str:
     lowered = command.lower()
-    if any(word in lowered for word in ["infer", "inference", "predict", "generate", "sample", "demo"]):
+    if any(
+        word in lowered
+        for word in [
+            "infer",
+            "inference",
+            "predict",
+            "generate",
+            "sample",
+            "demo",
+            "txt2img",
+            "img2img",
+            "transcribe",
+            "whisper ",
+            "amg.py",
+        ]
+    ):
         return "inference"
     if any(word in lowered for word in ["eval", "evaluate", "validation", "validate", "benchmark", "score"]):
         return "evaluation"
     if any(word in lowered for word in ["train", "training", "finetune", "fine-tune", "pretrain", "pre-train"]):
         return "training"
     return "other"
+
+
+def command_kind(command: str) -> str:
+    lowered = command.lower().strip()
+    setup_prefixes = (
+        "pip install",
+        "pip3 install",
+        "conda install",
+        "conda env create",
+        "conda create",
+        "conda activate",
+        "python -m pip install",
+        "git clone",
+        "cd ",
+    )
+    asset_prefixes = ("wget ", "curl ", "mkdir ", "tar ", "unzip ", "7z ", "aria2c ")
+    if lowered.startswith(setup_prefixes):
+        return "setup"
+    if lowered.startswith(asset_prefixes):
+        return "asset"
+    if "--help" in lowered or " -h" in lowered:
+        return "smoke"
+    return "run"
 
 
 def looks_like_command(line: str) -> bool:
@@ -92,7 +130,14 @@ def extract_commands(readme_text: str) -> Dict[str, object]:
 
         for line in lines:
             if line not in seen:
-                commands.append({"command": line, "category": classify(line), "source": "code_block"})
+                commands.append(
+                    {
+                        "command": line,
+                        "category": classify(line),
+                        "kind": command_kind(line),
+                        "source": "code_block",
+                    }
+                )
                 seen.add(line)
 
     for line in readme_text.splitlines():
@@ -103,7 +148,14 @@ def extract_commands(readme_text: str) -> Dict[str, object]:
         if not looks_like_command(command):
             continue
         if command and command not in seen:
-            commands.append({"command": command, "category": classify(command), "source": "inline"})
+            commands.append(
+                {
+                    "command": command,
+                    "category": classify(command),
+                    "kind": command_kind(command),
+                    "source": "inline",
+                }
+            )
             seen.add(command)
 
     if not commands:

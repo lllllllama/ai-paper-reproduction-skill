@@ -64,6 +64,7 @@ REQUIRED_SKILLS = {
         ],
     },
 }
+IGNORED_PATH_PARTS = {"tmp", "artifacts", "repro_outputs", "__pycache__", ".git"}
 
 
 def parse_front_matter(skill_md: Path) -> Dict[str, str]:
@@ -95,7 +96,7 @@ def validate_openai_yaml(path: Path) -> List[str]:
 def validate_python_files(root: Path) -> List[str]:
     errors: List[str] = []
     for path in root.rglob("*.py"):
-        if "__pycache__" in path.parts:
+        if any(part in IGNORED_PATH_PARTS for part in path.parts):
             continue
         try:
             py_compile.compile(str(path), doraise=True)

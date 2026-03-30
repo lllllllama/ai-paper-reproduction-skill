@@ -29,24 +29,53 @@ def run_json(script: Path, args: List[str]) -> Dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def command_score(command: Dict[str, Any]) -> int:
+    """Score commands so README-first execution prefers runnable entrypoints over setup steps."""
+    text = str(command.get("command", "")).lower()
+    kind = command.get("kind", "run")
+    score = 0
+
+    kind_score = {
+        "run": 40,
+        "smoke": 30,
+        "asset": 10,
+        "setup": 0,
+    }
+    score += kind_score.get(kind, 0)
+
+    if any(token in text for token in ["python ", "python3 ", "./", "whisper "]):
+        score += 8
+    if any(token in text for token in ["txt2img", "img2img", "amg.py", "transcribe", "infer", "eval"]):
+        score += 8
+    if "<" in text and ">" in text:
+        score -= 10
+    if text.startswith(("pip install", "conda install", "conda env create", "conda activate", "git clone", "cd ")):
+        score -= 12
+    return score
+
+
 def choose_goal(commands: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Choose the highest-priority documented command."""
     priority = ["inference", "evaluation", "training", "other"]
     for category in priority:
-        for item in commands:
-            if item.get("category") == category:
-                return {
-                    "selected_goal": category,
-                    "goal_priority": category,
-                    "documented_command": item.get("command", ""),
-                    "command_source": item.get("source", "readme"),
-                }
+        candidates = [item for item in commands if item.get("category") == category]
+        if not candidates:
+            continue
+        best = max(candidates, key=command_score)
+        return {
+            "selected_goal": category,
+            "goal_priority": category,
+            "documented_command": best.get("command", ""),
+            "command_source": best.get("source", "readme"),
+            "documented_command_kind": best.get("kind", "run"),
+        }
 
     return {
         "selected_goal": "repo-intake-only",
         "goal_priority": "other",
         "documented_command": "",
         "command_source": "none",
+        "documented_command_kind": "none",
     }
 
 
@@ -159,6 +188,7 @@ def build_context(
         "status": status,
         "documented_command_status": documented_status,
         "documented_command": chosen["documented_command"] or "None extracted",
+        "documented_command_kind": chosen.get("documented_command_kind", "none"),
         "result_summary": result_summary,
         "main_blocker": run_data.get("main_blocker", "No blocker recorded."),
         "next_action": "Prepare environment and assets, then retry the documented command."
@@ -192,6 +222,7 @@ def build_context(
         "evidence": [
             f"Detected files: {', '.join(scan_data.get('detected_files', [])) or 'none'}",
             f"Command categories: {json.dumps(command_data.get('counts', {}), ensure_ascii=False)}",
+            f"Selected command kind: {chosen.get('documented_command_kind', 'none')}",
         ],
         "blockers": [run_data.get("main_blocker", "None.")],
         "notes": notes,
