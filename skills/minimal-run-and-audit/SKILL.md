@@ -1,6 +1,6 @@
 ---
 name: minimal-run-and-audit
-description: Sub-skill for the execution-evidence and reporting phase of README-first AI repo reproduction. Use when the task is specifically to capture or normalize evidence from the selected smoke test or documented inference or evaluation command and write standardized `repro_outputs/` files including patch notes when repository files changed. Do not use for initial repo intake, generic environment setup, paper lookup, target selection, or end-to-end orchestration by itself.
+description: Execution and reporting sub-skill for README-first AI repo reproduction. Use when the task is specifically to capture or normalize evidence from the selected smoke test or documented inference or evaluation command and write standardized `repro_outputs/` files, including patch notes when repository files changed. Do not use for initial repo intake, generic environment setup, paper lookup, target selection, or end-to-end orchestration by itself.
 ---
 
 # minimal-run-and-audit

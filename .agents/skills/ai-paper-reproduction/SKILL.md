@@ -1,6 +1,6 @@
 ---
 name: ai-paper-reproduction
-description: Main orchestrator for README-first AI repo reproduction. Use when the user wants an end-to-end, minimal-trustworthy reproduction flow that reads the repository first, selects the smallest documented inference or evaluation target, coordinates intake, setup, execution, and optional paper-gap resolution, enforces conservative patch rules, and writes the standardized `repro_outputs/` bundle. Do not use for paper summary, generic environment setup, isolated repo scanning, standalone command execution, or broad research assistance outside repository-grounded reproduction.
+description: README-first AI repo reproduction orchestrator. Use when the user wants an end-to-end minimal trustworthy reproduction flow that reads the repo, selects the smallest documented inference or evaluation target, coordinates the intake, setup, execution, and optional paper-gap sub-skills, enforces conservative patch rules, and writes the standardized `repro_outputs/` bundle. Do not use for paper summary, generic environment setup, isolated repo scanning, standalone command execution, or broad research assistance outside repository-grounded reproduction.
 ---
 
 # ai-paper-reproduction

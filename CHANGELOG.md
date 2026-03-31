@@ -2,7 +2,7 @@
 
 ## v1.0.0
 
-Initial public release of `ai-paper-reproduction-skill`.
+Initial public release of `ai-paper-reproduction-skills`.
 
 ### Scope
 

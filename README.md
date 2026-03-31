@@ -1,6 +1,6 @@
-# ai-paper-reproduction-skill
+# ai-paper-reproduction-skills
 
-Multi-skill repository for README-first AI paper repository reproduction.
+Codex multi-skill repository for README-first AI paper repository reproduction.
 
 The main skill is `ai-paper-reproduction`. Most users should start there.
 
@@ -18,7 +18,7 @@ Use this repository when you want Codex to reproduce an AI paper repo by reading
 Install the main skill with the `skills` CLI:
 
 ```bash
-npx skills add lllllllama/ai-paper-reproduction-skill --skill ai-paper-reproduction
+npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduction
 ```
 
 Then start with the main skill:
@@ -32,13 +32,13 @@ Installation note:
 - Most users only need the main skill:
 
 ```bash
-npx skills add lllllllama/ai-paper-reproduction-skill --skill ai-paper-reproduction
+npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduction
 ```
 
 - To install the full multi-skill repository:
 
 ```bash
-npx skills add lllllllama/ai-paper-reproduction-skill --all
+npx skills add lllllllama/ai-paper-reproduction-skills --all
 ```
 
 - The repository keeps one `SKILL.md` per skill under `skills/`, so it is compatible with multi-skill GitHub repository discovery in the `skills` CLI.
@@ -46,15 +46,15 @@ npx skills add lllllllama/ai-paper-reproduction-skill --all
 ## Skills included
 
 - `ai-paper-reproduction`
-  - main README-first orchestrator for minimal trustworthy AI repo reproduction
+  - orchestrates README-first reproduction from intake through reporting
 - `repo-intake-and-plan`
-  - scans the repo and extracts documented commands and candidate paths
+  - maps the repo, extracts documented commands, and recommends the smallest credible target
 - `env-and-assets-bootstrap`
-  - prepares conservative environment and asset assumptions before execution
+  - prepares conservative environment, checkpoint, dataset, and cache assumptions before execution
 - `minimal-run-and-audit`
-  - normalizes execution evidence and writes `repro_outputs/`
+  - captures execution evidence and writes standardized `repro_outputs/`
 - `paper-context-resolver`
-  - optionally resolves a narrow paper-related reproduction gap
+  - resolves a narrow paper-critical gap only when README and repo evidence are insufficient
 
 ## Output files
 
