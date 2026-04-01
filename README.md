@@ -1,8 +1,23 @@
 # ai-paper-reproduction-skills
 
-Codex multi-skill repository for deep learning research workflows with a trusted-lane default.
+Lane-aware Codex skill repository for deep learning research workflows.
 
-The repository now ships a trusted lane, an explore lane, and two helper skills. Existing public skill names remain unchanged for compatibility.
+This repository is built around one default rule: `trusted by default`. It is meant to help researchers reproduce repositories, inspect projects, run conservative verification, and record what happened without turning the process into opaque automation.
+
+## What this repo is for
+
+- README-first AI repository reproduction
+- conservative environment and asset planning
+- read-only project and model analysis
+- trusted training startup verification and recorded training execution
+- safe research debugging
+- explicitly authorized exploratory code and run work
+
+It is not intended to be:
+
+- a general paper summarizer
+- an unconstrained autonomous research agent
+- a default “let AI rewrite the whole repo” workflow
 
 ## Core policy
 
@@ -29,7 +44,9 @@ Install only the main orchestrator:
 npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduction
 ```
 
-## Trusted lane
+## Public skills
+
+### Trusted lane
 
 - `ai-paper-reproduction`
   - end-to-end README-first reproduction orchestrator
@@ -44,14 +61,14 @@ npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduc
 - `safe-debug`
   - conservative research debugging with `debug_outputs/`
 
-## Explore lane
+### Explore lane
 
 - `explore-code`
   - isolated exploratory code adaptation and transplant work with `explore_outputs/`
 - `explore-run`
   - isolated exploratory run planning, sweeps, and ranking with `explore_outputs/`
 
-## Helper skills
+### Helper skills
 
 - `repo-intake-and-plan`
   - narrow helper for repo scanning and documented command extraction
@@ -60,7 +77,58 @@ npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduc
 
 These helper skills are usually orchestrator-invoked rather than primary user entrypoints.
 
-## How to use
+## Current trusted reproduction flow
+
+Today the main orchestrator already does the following:
+
+1. Scan the repository and README.
+2. Extract documented commands.
+3. Choose the smallest trustworthy target with this priority:
+   - documented inference
+   - documented evaluation
+   - documented training
+4. Build a conservative environment setup plan.
+5. Build a conservative asset manifest for datasets, checkpoints, weights, and cache locations.
+6. Execute the selected target:
+   - non-training targets run through the trusted verify path
+   - training targets run through `run-train`
+7. Write `repro_outputs/`
+8. When training was selected, also write `train_outputs/`
+
+### Trusted training behavior
+
+In trusted reproduction, training is intentionally conservative.
+
+- If a smaller documented inference or evaluation target exists, the orchestrator prefers that first.
+- If training is the selected trustworthy target, the orchestrator first performs startup verification or a short monitored training check.
+- After that short verification, it does not silently continue into a broader training reproduction run.
+- Instead, it surfaces:
+  - the planned fuller training command
+  - a conservative duration hint
+  - a human review checkpoint asking whether fuller training should continue
+
+### Explore training behavior
+
+Exploration must be explicit.
+
+- `explore-code` and `explore-run` are never the default route.
+- In the explore lane, training does not pause for the trusted-lane confirmation checkpoint.
+- Exploratory results are treated as candidates only, not trusted reproduction success.
+
+## Output directories
+
+- `repro_outputs/`
+  - trusted reproduction bundle
+- `train_outputs/`
+  - trusted training execution bundle
+- `analysis_outputs/`
+  - read-only project analysis
+- `debug_outputs/`
+  - trusted debug diagnosis and patch plan
+- `explore_outputs/`
+  - exploratory changeset and run ranking
+
+## Example prompts
 
 Trusted reproduction:
 
@@ -96,18 +164,31 @@ Use explore-code on an isolated branch. Try a LoRA adaptation for this backbone,
 Use explore-run on an experiment branch. Do a small-subset short-cycle sweep, rank the top runs, and treat the results as candidates only.
 ```
 
-## Output directories
+## Local validation
 
-- `repro_outputs/`
-  - trusted reproduction bundle
-- `analysis_outputs/`
-  - read-only project analysis
-- `debug_outputs/`
-  - trusted debug diagnosis and patch plan
-- `train_outputs/`
-  - trusted training execution bundle
-- `explore_outputs/`
-  - exploratory changeset and run ranking
+Run the full validation set:
+
+```bash
+python scripts/validate_repo.py
+python scripts/test_skill_registry.py
+python scripts/test_trigger_boundaries.py
+python scripts/test_readme_selection.py
+python scripts/test_output_rendering.py
+python scripts/test_train_output_rendering.py
+python scripts/test_analysis_output_rendering.py
+python scripts/test_safe_debug_output_rendering.py
+python scripts/test_explore_output_rendering.py
+python scripts/test_explore_variant_matrix.py
+python scripts/test_setup_planning.py
+python scripts/test_orchestrator_dry_run.py
+python scripts/test_training_lane_routing.py
+```
+
+If installation behavior changed, also run:
+
+```bash
+python scripts/install_skills.py --target ./tmp/skills --force
+```
 
 ## Routing summary
 
@@ -117,7 +198,7 @@ Use explore-run on an experiment branch. Do a small-subset short-cycle sweep, ra
 - explore skills must not claim trusted reproduction success
 - same-level skills should not call each other directly
 
-## Registry and policies
+## Registry and shared policy references
 
 - Skill registry: [references/skill-registry.json](references/skill-registry.json)
 - Routing policy: [references/routing-policy.md](references/routing-policy.md)
@@ -125,6 +206,15 @@ Use explore-run on an experiment branch. Do a small-subset short-cycle sweep, ra
 - Output contract: [references/output-contract.md](references/output-contract.md)
 - Research pitfall checklist: [references/research-pitfall-checklist.md](references/research-pitfall-checklist.md)
 
+## Current limits
+
+The repository framework is already stable, but some capabilities are still intentionally conservative:
+
+- `run-train` is a bounded training monitor, not a full long-running scheduler
+- trusted reproduction still avoids silent semantic changes
+- helper skills remain narrow and are not meant to become public “do everything” entrypoints
+- exploratory work is isolated and should not be confused with trusted baselines
+
 ## Scope
 
-This repository is not a general paper summarizer or an unconstrained autonomous research agent. It is a lane-aware deep learning research toolkit that optimizes for safety, observability, and reuse.
+This repository is a lane-aware deep learning research toolkit that optimizes for safety, observability, and reuse.

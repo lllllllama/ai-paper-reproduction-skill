@@ -18,7 +18,9 @@ python scripts/test_analysis_output_rendering.py
 python scripts/test_safe_debug_output_rendering.py
 python scripts/test_explore_output_rendering.py
 python scripts/test_explore_variant_matrix.py
+python scripts/test_setup_planning.py
 python scripts/test_orchestrator_dry_run.py
+python scripts/test_training_lane_routing.py
 ```
 
 3. If installation behavior changed, also run:
