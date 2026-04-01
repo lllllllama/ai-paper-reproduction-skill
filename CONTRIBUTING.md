@@ -4,11 +4,12 @@ This repository is a Codex multi-skill collection. Keep changes small, readable,
 
 ## Local workflow
 
-1. Edit the relevant files under `skills/`.
+1. Edit the relevant files under `skills/`, `references/`, or `scripts/`.
 2. Run:
 
 ```bash
 python scripts/validate_repo.py
+python scripts/test_skill_registry.py
 python scripts/test_trigger_boundaries.py
 python scripts/test_readme_selection.py
 python scripts/test_output_rendering.py
@@ -25,12 +26,13 @@ python scripts/install_skills.py --target ./tmp/skills --force
 ## Repository rules
 
 - Keep each skill folder named exactly after its front matter `name`.
+- Register every public or helper skill in `references/skill-registry.json`.
 - Keep `SKILL.md` focused on workflow and boundaries.
 - Move detailed policy into `references/`.
 - Keep reusable output templates in `assets/`.
 - Keep helper automation in `scripts/`.
 - Avoid heavy runtime dependencies.
-- Preserve the README-first reproduction scope.
+- Preserve trusted-lane defaults unless the change intentionally introduces an explore-lane capability.
 
 ## Compatibility rules
 
@@ -41,9 +43,11 @@ python scripts/install_skills.py --target ./tmp/skills --force
 ## Pull request checklist
 
 - `python scripts/validate_repo.py` passes
+- `python scripts/test_skill_registry.py` passes
 - `python scripts/test_trigger_boundaries.py` passes
 - `python scripts/test_readme_selection.py` passes
 - `python scripts/test_output_rendering.py` passes
 - installer still works
 - changed skill metadata still matches its folder and purpose
+- routing and lane behavior remain intentional
 - output spec changes are intentional and documented

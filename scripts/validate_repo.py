@@ -8,63 +8,35 @@ import json
 import py_compile
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-REQUIRED_SKILLS = {
-    "ai-paper-reproduction": {
-        "files": [
-            "SKILL.md",
-            "references/architecture.md",
-            "references/output-spec.md",
-            "references/patch-policy.md",
-            "references/language-policy.md",
-            "references/research-safety-principles.md",
-            "assets/SUMMARY.template.md",
-            "assets/COMMANDS.template.md",
-            "assets/LOG.template.md",
-            "assets/PATCHES.template.md",
-            "assets/status.template.json",
-            "scripts/orchestrate_repro.py",
-            "agents/openai.yaml",
-        ],
-    },
-    "repo-intake-and-plan": {
-        "files": [
-            "SKILL.md",
-            "references/repo-scan-rules.md",
-            "scripts/scan_repo.py",
-            "scripts/extract_commands.py",
-            "agents/openai.yaml",
-        ],
-    },
-    "env-and-assets-bootstrap": {
-        "files": [
-            "SKILL.md",
-            "references/env-policy.md",
-            "references/assets-policy.md",
-            "scripts/bootstrap_env.sh",
-            "scripts/prepare_assets.py",
-            "agents/openai.yaml",
-        ],
-    },
-    "minimal-run-and-audit": {
-        "files": [
-            "SKILL.md",
-            "references/reporting-policy.md",
-            "scripts/write_outputs.py",
-            "agents/openai.yaml",
-        ],
-    },
-    "paper-context-resolver": {
-        "files": [
-            "SKILL.md",
-            "references/paper-assisted-reproduction.md",
-            "agents/openai.yaml",
-        ],
-    },
-}
+REGISTRY_PATH = Path("references/skill-registry.json")
+ALLOWED_TIERS = {"public", "helper"}
+ALLOWED_LANES = {"trusted", "explore", "helper"}
+ROOT_REQUIRED_FILES = [
+    "README.md",
+    "CONTRIBUTING.md",
+    ".editorconfig",
+    "scripts/install_skills.py",
+    "scripts/validate_repo.py",
+    "scripts/test_skill_registry.py",
+    "references/skill-registry.json",
+    "references/trigger-boundary-policy.md",
+    "references/routing-policy.md",
+    "references/research-pitfall-checklist.md",
+    "references/branch-and-commit-policy.md",
+    "references/output-contract.md",
+]
+ROOT_REQUIRED_TESTS = [
+    "scripts/test_trigger_boundaries.py",
+    "scripts/test_readme_selection.py",
+    "scripts/test_output_rendering.py",
+    "scripts/test_skill_registry.py",
+    "tests/trigger_cases.json",
+    "tests/readme_selection_cases.json",
+]
 IGNORED_PATH_PARTS = {"tmp", "artifacts", "repro_outputs", "__pycache__", ".git"}
 
 
@@ -106,22 +78,82 @@ def validate_python_files(root: Path) -> List[str]:
     return errors
 
 
+def load_skill_registry(root: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
+    errors: List[str] = []
+    registry_path = root / REGISTRY_PATH
+    if not registry_path.exists():
+        return [], [f"Missing registry file: {REGISTRY_PATH.as_posix()}"]
+
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [], [f"Invalid JSON in {registry_path}: {exc}"]
+
+    if payload.get("schema_version") != "1.0":
+        errors.append(f"Unsupported registry schema_version in {registry_path}")
+
+    skills = payload.get("skills")
+    if not isinstance(skills, list) or not skills:
+        errors.append(f"Registry {registry_path} must contain a non-empty `skills` list")
+        return [], errors
+
+    names = set()
+    for item in skills:
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            errors.append("Registry entry missing string `name`")
+            continue
+        if name in names:
+            errors.append(f"Duplicate registry skill name: {name}")
+        names.add(name)
+
+        if item.get("tier") not in ALLOWED_TIERS:
+            errors.append(f"{name} has invalid tier `{item.get('tier')}`")
+        if item.get("lane") not in ALLOWED_LANES:
+            errors.append(f"{name} has invalid lane `{item.get('lane')}`")
+
+        compat = item.get("compat")
+        if not isinstance(compat, dict):
+            errors.append(f"{name} missing compat object")
+        else:
+            if "preserve_name" not in compat:
+                errors.append(f"{name} missing compat.preserve_name")
+            aliases = compat.get("aliases", [])
+            if not isinstance(aliases, list):
+                errors.append(f"{name} has invalid compat.aliases")
+
+        if not isinstance(item.get("can_call", []), list):
+            errors.append(f"{name} has invalid can_call list")
+        if not isinstance(item.get("required_files", []), list):
+            errors.append(f"{name} has invalid required_files list")
+
+        output_mode = item.get("output_mode")
+        if not isinstance(output_mode, dict):
+            errors.append(f"{name} missing output_mode object")
+        else:
+            if "kind" not in output_mode:
+                errors.append(f"{name} missing output_mode.kind")
+            if not isinstance(output_mode.get("artifacts", []), list):
+                errors.append(f"{name} has invalid output_mode.artifacts")
+
+    for item in skills:
+        name = item.get("name")
+        for callee in item.get("can_call", []):
+            if callee not in names:
+                errors.append(f"{name} references unknown callee `{callee}`")
+
+    return skills, errors
+
+
 def validate_repo(root: Path) -> Tuple[List[str], List[str]]:
     errors: List[str] = []
     warnings: List[str] = []
 
-    for rel in ["README.md", "CONTRIBUTING.md", ".editorconfig", "scripts/install_skills.py", "scripts/validate_repo.py"]:
+    for rel in ROOT_REQUIRED_FILES:
         if not (root / rel).exists():
             errors.append(f"Missing repository file: {rel}")
 
-    for rel in [
-        "scripts/test_trigger_boundaries.py",
-        "scripts/test_readme_selection.py",
-        "scripts/test_output_rendering.py",
-        "tests/trigger_cases.json",
-        "tests/readme_selection_cases.json",
-        "references/trigger-boundary-policy.md",
-    ]:
+    for rel in ROOT_REQUIRED_TESTS:
         if not (root / rel).exists():
             errors.append(f"Missing repository file: {rel}")
 
@@ -130,15 +162,23 @@ def validate_repo(root: Path) -> Tuple[List[str], List[str]]:
         errors.append("Missing `skills/` directory.")
         return errors, warnings
 
+    registry_skills, registry_errors = load_skill_registry(root)
+    errors.extend(registry_errors)
+    registry_by_name = {item["name"]: item for item in registry_skills if "name" in item}
+
     skill_dirs = sorted(
         path for path in skills_root.iterdir()
         if path.is_dir() and (path / "SKILL.md").exists()
     )
     discovered_names = {path.name for path in skill_dirs}
 
-    for required_name in REQUIRED_SKILLS:
+    for required_name in registry_by_name:
         if required_name not in discovered_names:
             errors.append(f"Missing required skill directory: skills/{required_name}")
+
+    for discovered_name in discovered_names:
+        if discovered_name not in registry_by_name:
+            errors.append(f"Unregistered skill directory: skills/{discovered_name}")
 
     for skill_dir in skill_dirs:
         if not SKILL_NAME_RE.match(skill_dir.name):
@@ -159,7 +199,7 @@ def validate_repo(root: Path) -> Tuple[List[str], List[str]]:
         if not description:
             errors.append(f"Missing description in {skill_dir / 'SKILL.md'}")
 
-        required_files = REQUIRED_SKILLS.get(skill_dir.name, {}).get("files", [])
+        required_files = registry_by_name.get(skill_dir.name, {}).get("required_files", [])
         for rel in required_files:
             if not (skill_dir / rel).exists():
                 errors.append(f"Missing required file for {skill_dir.name}: {rel}")
