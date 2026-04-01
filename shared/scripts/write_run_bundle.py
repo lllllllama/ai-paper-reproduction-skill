@@ -230,6 +230,8 @@ def write_repro_status(output_dir: Path, context: Dict[str, Any]) -> None:
         "human_decisions_required": context.get("human_decisions_required", []),
         "next_safe_action": context.get("next_safe_action"),
         "artifact_provenance": context.get("artifact_provenance", []),
+        "full_training_command": context.get("full_training_command"),
+        "training_duration_hint": context.get("training_duration_hint"),
         "verified_commit_count": len(context.get("verified_commits", [])),
         "outputs": {
             "summary": "repro_outputs/SUMMARY.md",
@@ -430,6 +432,8 @@ def write_train_status(output_dir: Path, context: Dict[str, Any]) -> None:
         "resume_from": context.get("resume_from"),
         "dataset": context.get("dataset"),
         "checkpoint_source": context.get("checkpoint_source"),
+        "full_training_command": context.get("full_training_command"),
+        "training_duration_hint": context.get("training_duration_hint"),
         "max_steps": context.get("max_steps"),
         "completed_steps": context.get("completed_steps"),
         "last_epoch": context.get("last_epoch"),

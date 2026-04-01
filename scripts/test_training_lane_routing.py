@@ -72,6 +72,10 @@ def run_case(orchestrator: Path, sample_repo: Path, temp_root: Path, lane: str) 
         raise AssertionError(f"{lane} case failed to preserve the lane in train_outputs/status.json")
     if train_status["completed_steps"] < 1:
         raise AssertionError(f"{lane} case failed to parse any completed steps from the training log")
+    if train_status["full_training_command"] != "python train.py --config configs/demo.yaml":
+        raise AssertionError(f"{lane} case failed to preserve the fuller training command")
+    if "likely" not in (train_status["training_duration_hint"] or "") and "hours" not in (train_status["training_duration_hint"] or ""):
+        raise AssertionError(f"{lane} case failed to emit a conservative training duration hint")
 
     if lane == "trusted":
         if payload["run_mode"] != "startup_verification":
@@ -80,6 +84,8 @@ def run_case(orchestrator: Path, sample_repo: Path, temp_root: Path, lane: str) 
             raise AssertionError("trusted case should require explicit confirmation before fuller training")
         if train_status["stop_reason"] != "startup_verification_window_elapsed":
             raise AssertionError("trusted case should stop at the startup verification window")
+        if "Estimated duration:" not in payload["next_action"]:
+            raise AssertionError("trusted case should mention the expected fuller training duration in next_action")
     else:
         if payload["run_mode"] != "full_kickoff":
             raise AssertionError("explore case should switch directly to full_kickoff mode")

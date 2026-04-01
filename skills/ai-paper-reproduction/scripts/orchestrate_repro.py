@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -86,6 +87,56 @@ def derive_checkpoint_hint(asset_data: Dict[str, Any]) -> str:
         if item.get("asset_group") in {"checkpoints", "weights"} and item.get("status") == "present":
             return item.get("source_hint", "repo-local checkpoint")
     return "none"
+
+
+def extract_config_path(command: str) -> str | None:
+    tokens = shlex.split(command, posix=False)
+    for index, token in enumerate(tokens):
+        if token in {"--config", "--cfg"} and index + 1 < len(tokens):
+            return tokens[index + 1]
+        if token.startswith("--config="):
+            return token.split("=", 1)[1]
+        if token.startswith("--cfg="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def estimate_training_duration(repo_path: Path, command: str, max_train_steps: int) -> str:
+    if max_train_steps > 0:
+        if max_train_steps <= 200:
+            return f"roughly minutes to under 1 hour for about {max_train_steps} steps, depending on dataset size and GPU throughput"
+        if max_train_steps <= 5000:
+            return f"roughly hours for about {max_train_steps} steps, depending on dataset size and GPU throughput"
+        return f"likely many hours to multi-day for about {max_train_steps} steps, depending on dataset size and GPU throughput"
+
+    config_rel = extract_config_path(command)
+    if config_rel:
+        config_path = (repo_path / config_rel).resolve()
+        if config_path.exists() and config_path.suffix.lower() in {".yaml", ".yml", ".json", ".toml", ".py"}:
+            text_content = config_path.read_text(encoding="utf-8", errors="replace")
+            step_match = None
+            for key in ["max_steps", "total_steps", "train_steps", "num_steps"]:
+                step_match = re.search(rf"{key}\s*[:=]\s*(\d+)", text_content, flags=re.IGNORECASE)
+                if step_match:
+                    steps = int(step_match.group(1))
+                    if steps <= 200:
+                        return f"roughly minutes to under 1 hour from config-bound {steps} steps, depending on GPU throughput"
+                    if steps <= 5000:
+                        return f"roughly hours from config-bound {steps} steps, depending on GPU throughput"
+                    return f"likely many hours to multi-day from config-bound {steps} steps, depending on dataset size and GPU throughput"
+
+            epoch_match = None
+            for key in ["epochs", "max_epochs", "num_epochs", "train_epochs"]:
+                epoch_match = re.search(rf"{key}\s*[:=]\s*(\d+)", text_content, flags=re.IGNORECASE)
+                if epoch_match:
+                    epochs = int(epoch_match.group(1))
+                    if epochs <= 3:
+                        return f"roughly minutes to under 1 hour for about {epochs} epochs, depending on dataset size and GPU throughput"
+                    if epochs <= 20:
+                        return f"roughly hours for about {epochs} epochs, depending on dataset size and GPU throughput"
+                    return f"likely many hours to multi-day for about {epochs} epochs, depending on dataset size and GPU throughput"
+
+    return "unknown; likely hours to multi-day on the full dataset until a bounded schedule is confirmed"
 
 
 def command_score(command: Dict[str, Any]) -> int:
@@ -316,6 +367,11 @@ def build_context(
     asset_commands = build_asset_commands(asset_data)
     dataset_hint = run_data.get("dataset") or derive_dataset_hint(asset_data)
     checkpoint_hint = run_data.get("checkpoint_source") or derive_checkpoint_hint(asset_data)
+    training_duration_hint = (
+        estimate_training_duration(repo_path, chosen["documented_command"], int(run_data.get("max_steps") or 0))
+        if chosen["selected_goal"] == "training" and chosen["documented_command"]
+        else None
+    )
 
     notes: List[str] = []
     notes.extend(scan_data.get("warnings", []))
@@ -420,8 +476,8 @@ def build_context(
         if lane == "trusted" and not full_training_authorized:
             next_action = text(
                 user_language,
-                "Review `train_outputs/status.json` and decide whether to authorize a fuller training reproduction run.",
-                "先检查 `train_outputs/status.json`，再决定是否授权更完整的训练复现。",
+                f"Review `train_outputs/status.json`, then decide whether to authorize a fuller training reproduction run. Planned command: `{chosen['documented_command']}`. Estimated duration: {training_duration_hint}.",
+                f"先检查 `train_outputs/status.json`，再决定是否授权更完整的训练复现。计划继续执行的命令是：`{chosen['documented_command']}`。保守预估时长：{training_duration_hint}。",
             )
             next_safe_action = "Keep the repo unchanged, review startup evidence, and only continue with fuller training after explicit researcher approval."
         elif lane == "explore":
@@ -488,6 +544,8 @@ def build_context(
     ]
     if chosen["selected_goal"] == "training":
         timeline.append(text(user_language, f"Training lane `{lane}` selected with run mode `{run_data.get('run_mode', 'startup_verification')}`.", f"已选择训练 lane `{lane}`，运行模式为 `{run_data.get('run_mode', 'startup_verification')}`。"))
+        if training_duration_hint:
+            timeline.append(text(user_language, f"Estimated fuller training duration: {training_duration_hint}.", f"保守估计完整训练时长：{training_duration_hint}。"))
 
     artifact_provenance = [
         {"artifact": "readme", "source": scan_data.get("readme_path") or "not found", "kind": "repo_file"},
@@ -548,6 +606,8 @@ def build_context(
         "resume_from": run_data.get("resume_from"),
         "dataset": dataset_hint,
         "checkpoint_source": checkpoint_hint,
+        "full_training_command": chosen["documented_command"] if chosen["selected_goal"] == "training" else None,
+        "training_duration_hint": training_duration_hint,
         "max_steps": run_data.get("max_steps"),
         "completed_steps": run_data.get("completed_steps"),
         "best_metric": run_data.get("best_metric"),
