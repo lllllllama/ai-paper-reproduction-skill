@@ -16,7 +16,7 @@ def write_context(path: Path) -> Dict[str, object]:
     context = {
         "schema_version": "1.0",
         "generated_at": "2026-03-30T00:00:00Z",
-        "user_language": "zh-CN",
+        "user_language": "en",
         "target_repo": "D:/demo/repo",
         "readme_first": True,
         "selected_goal": "inference",
@@ -27,21 +27,30 @@ def write_context(path: Path) -> Dict[str, object]:
         "documented_command_kind": "run",
         "documented_command_source": "code_block",
         "documented_command_section": "Usage",
-        "result_summary": "已根据 README 证据选择目标 `inference`。",
-        "main_blocker": "选定的已文档化命令以退出码 1 结束。",
-        "next_action": "先准备环境与资源，再重试该已文档化命令。",
+        "evidence_level": "mixed",
+        "result_summary": "Selected `inference` from README evidence.",
+        "main_blocker": "The documented command exited with code 1.",
+        "next_action": "Prepare environment and assets, then retry the documented command.",
+        "next_safe_action": "Review the blocker and confirm the next documented verification step.",
         "setup_commands": [{"label": "adapted", "command": "conda env create -f environment.yml"}],
         "asset_commands": [{"label": "inferred", "command": "# placeholder asset step"}],
         "run_commands": [{"label": "documented", "command": "python demo.py --prompt test"}],
         "verification_commands": [{"label": "inferred", "command": "# placeholder verification step"}],
         "command_notes": [
-            "README 路径：D:/demo/repo/README.md",
-            "主运行标签：来自 README 的 documented（code_block），章节 `Usage`",
+            "README path: D:/demo/repo/README.md",
+            "Main run label: documented from README (code_block), section `Usage`",
         ],
-        "timeline": ["已扫描仓库结构和关键信息文件。"],
-        "assumptions": ["README 仍是主要事实来源。"],
-        "evidence": ["检测到的文件：README.md"],
-        "blockers": ["选定的已文档化命令以退出码 1 结束。"],
+        "timeline": ["Scanned repository structure and key metadata files."],
+        "assumptions": ["README remains the primary source of truth."],
+        "unverified_inferences": ["Conda environment name still needs confirmation from repo docs."],
+        "evidence": ["Detected files: README.md"],
+        "protocol_deviations": ["No protocol deviation was applied during this run."],
+        "human_decisions_required": ["Confirm whether the documented command should be retried after the path fix."],
+        "artifact_provenance": [
+            {"artifact": "readme", "source": "D:/demo/repo/README.md", "kind": "repo_file"},
+            {"artifact": "output_dir", "source": "repro_outputs/", "kind": "generated"},
+        ],
+        "blockers": ["The documented command exited with code 1."],
         "notes": [],
         "patches_applied": True,
         "patch_branch": "repro/2026-03-30-demo",
@@ -52,13 +61,13 @@ def write_context(path: Path) -> Dict[str, object]:
                 "commit": "abc1234",
                 "summary": "adjust path handling for documented eval command",
                 "files": ["configs/demo.yaml", "scripts/eval.py"],
-                "why": ["README 命令在 Windows 上期望使用仓库相对配置路径。"],
-                "verification": ["重新运行 `python demo.py --prompt test`，确认配置已正确加载。"],
+                "why": ["The README command expected a repo-relative config path on Windows."],
+                "verification": ["Re-ran `python demo.py --prompt test` and confirmed config loading passed."],
                 "risk": "low",
                 "readme_fidelity_effect": "clarified",
             }
         ],
-        "validation_summary": "应用 patch 后重新运行已文档化命令，原始失败点已经越过配置加载阶段。",
+        "validation_summary": "After the patch, the documented command moved past the original config-loading failure.",
         "patch_notes": ["Patch stayed within documented command semantics."],
     }
     path.write_text(json.dumps(context, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -93,21 +102,24 @@ def main() -> int:
         patches = (output_dir / "PATCHES.md").read_text(encoding="utf-8")
         status = json.loads((output_dir / "status.json").read_text(encoding="utf-8"))
 
-        assert_contains(commands, "# 命令", "COMMANDS.md")
+        assert_contains(commands, "# Commands", "COMMANDS.md")
         assert_contains(commands, "# [adapted]", "COMMANDS.md")
         assert_contains(commands, "# [documented]", "COMMANDS.md")
         assert_contains(commands, "# [inferred]", "COMMANDS.md")
-        assert_contains(summary, "# 复现摘要", "SUMMARY.md")
-        assert_contains(summary, "是否应用 patch", "SUMMARY.md")
+        assert_contains(summary, "# Reproduction Summary", "SUMMARY.md")
+        assert_contains(summary, "Patches applied", "SUMMARY.md")
         assert_contains(summary, "repro/2026-03-30-demo", "SUMMARY.md")
-        assert_contains(log, "# 复现日志", "LOG.md")
-        assert_contains(log, "命令来源信息", "LOG.md")
-        assert_contains(patches, "# Patch 记录", "PATCHES.md")
-        assert_contains(patches, "最高 patch 风险", "PATCHES.md")
+        assert_contains(log, "# Reproduction Log", "LOG.md")
+        assert_contains(log, "## Command provenance", "LOG.md")
+        assert_contains(log, "## Unverified inferences", "LOG.md")
+        assert_contains(log, "## Human review checkpoints", "LOG.md")
+        assert_contains(log, "## Next safe action", "LOG.md")
+        assert_contains(patches, "# Patch Record", "PATCHES.md")
+        assert_contains(patches, "Highest patch risk", "PATCHES.md")
         assert_contains(patches, "configs/demo.yaml", "PATCHES.md")
-        assert_contains(patches, "README 命令", "PATCHES.md")
+        assert_contains(patches, "documented eval command", "PATCHES.md")
 
-        if status["user_language"] != "zh-CN":
+        if status["user_language"] != "en":
             raise AssertionError("status.json lost the expected user_language value")
         if status["status"] != "partial":
             raise AssertionError("status.json lost the expected status value")
@@ -119,11 +131,19 @@ def main() -> int:
             raise AssertionError("status.json lost the expected patch_branch value")
         if status["highest_patch_risk"] != "low":
             raise AssertionError("status.json lost the expected highest_patch_risk value")
+        if status["evidence_level"] != "mixed":
+            raise AssertionError("status.json lost the expected evidence_level value")
+        if status["next_safe_action"] != "Review the blocker and confirm the next documented verification step.":
+            raise AssertionError("status.json lost the expected next_safe_action value")
+        if len(status["human_decisions_required"]) != 1:
+            raise AssertionError("status.json lost the expected human_decisions_required value")
+        if len(status["artifact_provenance"]) != 2:
+            raise AssertionError("status.json lost the expected artifact_provenance value")
         if status["verified_commit_count"] != 1:
             raise AssertionError("status.json lost the expected verified_commit_count value")
 
         print("ok: True")
-        print("checks: 17")
+        print("checks: 22")
         print("failures: 0")
         return 0
     finally:

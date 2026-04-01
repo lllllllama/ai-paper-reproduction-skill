@@ -14,9 +14,17 @@
 
 {{assumptions}}
 
+## Unverified inferences
+
+{{unverified_inferences}}
+
 ## Evidence
 
 {{evidence}}
+
+## Protocol deviations
+
+{{protocol_deviations}}
 
 ## Command provenance
 
@@ -25,6 +33,14 @@
 - Section: `{{documented_command_section}}`
 - Kind: `{{documented_command_kind}}`
 
+## Human review checkpoints
+
+{{human_decisions_required}}
+
 ## Failures or blockers
 
 {{blockers}}
+
+## Next safe action
+
+{{next_safe_action}}

@@ -50,6 +50,7 @@ Requirements:
 - keys remain in English
 - enums remain stable
 - values can summarize both success and partial verification
+- preserve observability for assumptions, deviations, evidence level, and human review points
 
 Suggested top-level keys:
 
@@ -70,6 +71,13 @@ Suggested top-level keys:
 - `patch_branch`
 - `readme_fidelity`
 - `highest_patch_risk`
+- `evidence_level`
+- `assumptions`
+- `unverified_inferences`
+- `protocol_deviations`
+- `human_decisions_required`
+- `next_safe_action`
+- `artifact_provenance`
 - `verified_commit_count`
 - `outputs`
 - `notes`
@@ -80,6 +88,27 @@ Recommended status enums:
 - `partial`
 - `blocked`
 - `not_run`
+
+Recommended evidence level enums:
+
+- `direct`
+- `mixed`
+- `inferred`
+
+Field intent:
+
+- `assumptions`
+  - important assumptions that still shape execution or interpretation
+- `unverified_inferences`
+  - bounded inferences that were useful but not directly verified
+- `protocol_deviations`
+  - meaningful differences from README, paper, or documented setup
+- `human_decisions_required`
+  - decisions that should not be taken implicitly by the agent
+- `next_safe_action`
+  - the lowest-risk next step a researcher can review or run
+- `artifact_provenance`
+  - where key inputs or outputs came from, such as README, repo path, paper, dataset root, checkpoint, or generated logs
 
 ## `PATCHES.md`
 

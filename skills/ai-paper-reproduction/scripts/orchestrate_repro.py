@@ -160,6 +160,15 @@ def build_context(
     notes.extend(scan_data.get("warnings", []))
     notes.extend(command_data.get("warnings", []))
     notes.extend(run_data.get("execution_log", []))
+    assumptions = [
+        "README remains the primary source of truth.",
+        "Environment creation should prefer conda-style isolation.",
+    ]
+    unverified_inferences = [
+        "Environment commands are conservative placeholders until the repo confirms the exact environment name."
+    ]
+    protocol_deviations: List[str] = []
+    human_decisions_required: List[str] = []
 
     if chosen["documented_command"]:
         result_summary = text(
@@ -216,6 +225,19 @@ def build_context(
             source_note += text(user_language, f", section `{section}`", f"，章节 `{section}`")
         command_notes.append(source_note)
 
+    if not chosen["documented_command"]:
+        human_decisions_required.append(
+            "Select or confirm a documented runnable command before treating this as a reproduction run."
+        )
+    if chosen["selected_goal"] == "training":
+        human_decisions_required.append(
+            "Confirm that training startup or partial verification is acceptable before claiming full training reproduction."
+        )
+    if run_selected and status in {"partial", "blocked"}:
+        human_decisions_required.append(
+            "Review the blocker before adapting commands, dependencies, or protocol-sensitive settings."
+        )
+
     return {
         "schema_version": "1.0",
         "generated_at": scan_data.get("generated_at"),
@@ -230,6 +252,7 @@ def build_context(
         "documented_command_kind": chosen.get("documented_command_kind", "none"),
         "documented_command_source": chosen.get("command_source", "none"),
         "documented_command_section": chosen.get("documented_command_section"),
+        "evidence_level": "direct" if chosen["documented_command"] else "mixed",
         "result_summary": result_summary,
         "main_blocker": run_data.get("main_blocker", text(user_language, "No blocker recorded.", "未记录阻塞项。")),
         "next_action": (
@@ -244,6 +267,11 @@ def build_context(
                 "Review outputs and continue with the next documented verification step.",
                 "检查输出后继续下一步已文档化验证。",
             )
+        ),
+        "next_safe_action": (
+            "Review setup assumptions and confirm the next documented command before making any semantic changes."
+            if status in {"partial", "blocked", "not_run"}
+            else "Review generated outputs and confirm that the next documented verification step preserves experiment meaning."
         ),
         "setup_commands": [
             {"label": "adapted", "command": "conda env create -f environment.yml"},
@@ -285,6 +313,7 @@ def build_context(
             text(user_language, "README remains the primary source of truth.", "README 仍是主要事实来源。"),
             text(user_language, "Environment creation should prefer conda-style isolation.", "环境创建应优先采用 conda 式隔离。"),
         ],
+        "unverified_inferences": unverified_inferences,
         "evidence": [
             text(
                 user_language,
@@ -303,6 +332,13 @@ def build_context(
             ),
         ],
         "blockers": [run_data.get("main_blocker", text(user_language, "None.", "无。"))],
+        "protocol_deviations": protocol_deviations,
+        "human_decisions_required": human_decisions_required,
+        "artifact_provenance": [
+            {"artifact": "readme", "source": scan_data.get("readme_path") or "not found", "kind": "repo_file"},
+            {"artifact": "documented_command", "source": chosen.get("command_source", "none"), "kind": "readme_extraction"},
+            {"artifact": "output_dir", "source": "repro_outputs/", "kind": "generated"},
+        ],
         "notes": notes,
         "patches_applied": False,
         "patch_branch": "",

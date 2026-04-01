@@ -1,6 +1,6 @@
 ---
 name: ai-paper-reproduction
-description: Main orchestrator for README-first AI repo reproduction. Use when the user wants an end-to-end, minimal-trustworthy reproduction flow that reads the repository first, selects the smallest documented inference or evaluation target, coordinates intake, setup, execution, and optional paper-gap resolution, enforces conservative patch rules, and writes the standardized `repro_outputs/` bundle. Do not use for paper summary, generic environment setup, isolated repo scanning, standalone command execution, or broad research assistance outside repository-grounded reproduction.
+description: Main orchestrator for README-first AI repo reproduction. Use when the user wants an end-to-end, minimal-trustworthy reproduction flow that reads the repository first, selects the smallest documented inference or evaluation target, coordinates intake, setup, execution, and optional paper-gap resolution, enforces conservative patch rules, records evidence assumptions deviations and human decision points, and writes the standardized `repro_outputs/` bundle. Do not use for paper summary, generic environment setup, isolated repo scanning, standalone command execution, silent protocol changes, or broad research assistance outside repository-grounded reproduction.
 ---
 
 # ai-paper-reproduction
@@ -27,6 +27,7 @@ description: Main orchestrator for README-first AI repo reproduction. Use when t
 - A minimum trustworthy target is selected and justified.
 - Documented inference is preferred over evaluation, and evaluation is preferred over training.
 - Any repo edits remain conservative, explicit, and auditable.
+- Assumptions, protocol deviations, and human decision points are surfaced rather than hidden.
 - `repro_outputs/` is generated with consistent structure and stable machine-readable fields.
 - Final user-facing explanation is short and follows the user's language when practical.
 
@@ -88,6 +89,16 @@ Rules:
 
 See `references/patch-policy.md`.
 
+## Research safety boundary
+
+- Preserve experiment meaning over convenience.
+- Do not silently change dataset, split, checkpoint, preprocessing, metric, loss, or model semantics.
+- Distinguish direct evidence from inference and from user-approved decisions.
+- Prefer a recorded blocker over an unrecorded workaround.
+- Escalate for explicit human review before any change that could alter scientific meaning or reported conclusions.
+
+See `references/research-safety-principles.md`.
+
 ## Workflow
 
 1. Read README and repo signals.
@@ -95,9 +106,10 @@ See `references/patch-policy.md`.
 3. Select the smallest trustworthy reproduction target.
 4. Call `env-and-assets-bootstrap` to prepare environment assumptions and asset paths.
 5. Run a conservative smoke check or documented command with `minimal-run-and-audit`.
-6. Use `paper-context-resolver` only if README and repo files leave a narrow reproduction-critical gap that blocks the current target.
-7. Write the standardized outputs.
-8. Give the user a short final note in the user's language.
+6. Stop for human review if protocol meaning, model semantics, or result interpretation would otherwise be changed implicitly.
+7. Use `paper-context-resolver` only if README and repo files leave a narrow reproduction-critical gap that blocks the current target.
+8. Write the standardized outputs with evidence, assumptions, deviations, and next safe action.
+9. Give the user a short final note in the user's language.
 
 ## Required outputs
 

@@ -16,6 +16,13 @@
   "patch_branch": null,
   "readme_fidelity": null,
   "highest_patch_risk": null,
+  "evidence_level": "{{evidence_level}}",
+  "assumptions": [],
+  "unverified_inferences": [],
+  "protocol_deviations": [],
+  "human_decisions_required": [],
+  "next_safe_action": "{{next_safe_action}}",
+  "artifact_provenance": [],
   "verified_commit_count": 0,
   "outputs": {
     "summary": "repro_outputs/SUMMARY.md",

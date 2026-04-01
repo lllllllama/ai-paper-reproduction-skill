@@ -20,6 +20,7 @@ REQUIRED_SKILLS = {
             "references/output-spec.md",
             "references/patch-policy.md",
             "references/language-policy.md",
+            "references/research-safety-principles.md",
             "assets/SUMMARY.template.md",
             "assets/COMMANDS.template.md",
             "assets/LOG.template.md",
