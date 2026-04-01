@@ -21,6 +21,7 @@ def write_repo(root: Path) -> None:
         encoding="utf-8",
     )
     (root / "train.py").write_text("print('train stub')\n", encoding="utf-8")
+    (root / "environment.yml").write_text("name: demo-env\ndependencies:\n  - python=3.10\n", encoding="utf-8")
     (root / "configs").mkdir()
     (root / "configs" / "demo.yaml").write_text("model: demo\n", encoding="utf-8")
 
@@ -70,9 +71,15 @@ def main() -> int:
         for rel in ["SUMMARY.md", "COMMANDS.md", "LOG.md", "status.json"]:
             if not (output_dir / rel).exists():
                 raise AssertionError(f"orchestrator dry-run failed to emit {rel}")
+        train_output_dir = temp_root / "train_outputs"
+        for rel in ["SUMMARY.md", "COMMANDS.md", "LOG.md", "status.json"]:
+            if not (train_output_dir / rel).exists():
+                raise AssertionError(f"orchestrator dry-run failed to emit train_outputs/{rel}")
+        if payload["setup_commands"][0]["command"] != "conda env create -f environment.yml":
+            raise AssertionError("orchestrator failed to propagate the environment setup plan")
 
         print("ok: True")
-        print("checks: 5")
+        print("checks: 7")
         print("failures: 0")
         return 0
     finally:

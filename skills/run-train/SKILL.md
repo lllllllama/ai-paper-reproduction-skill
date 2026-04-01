@@ -41,4 +41,4 @@ description: Trusted-lane training execution skill for deep learning research re
 
 ## Notes
 
-Use `references/training-policy.md` and `scripts/write_outputs.py`.
+Use `references/training-policy.md`, `scripts/run_training.py`, and `scripts/write_outputs.py`.

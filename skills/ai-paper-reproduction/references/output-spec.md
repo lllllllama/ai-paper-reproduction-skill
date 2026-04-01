@@ -6,6 +6,14 @@ All runs should target the same output directory:
 repro_outputs/
 ```
 
+When the selected trustworthy target is documented training, the orchestrator may also emit a supplemental:
+
+```text
+train_outputs/
+```
+
+That training bundle should hold the training-specific checkpoint, metric, and monitoring state, while `repro_outputs/` remains the primary reproduction-facing summary.
+
 ## `SUMMARY.md`
 
 Audience:

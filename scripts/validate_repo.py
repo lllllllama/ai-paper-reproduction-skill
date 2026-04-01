@@ -36,6 +36,8 @@ ROOT_REQUIRED_TESTS = [
     "scripts/test_readme_selection.py",
     "scripts/test_output_rendering.py",
     "scripts/test_train_output_rendering.py",
+    "scripts/test_setup_planning.py",
+    "scripts/test_training_lane_routing.py",
     "scripts/test_explore_output_rendering.py",
     "scripts/test_explore_variant_matrix.py",
     "scripts/test_orchestrator_dry_run.py",

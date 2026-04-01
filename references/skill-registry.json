@@ -80,6 +80,7 @@
         "references/env-policy.md",
         "references/assets-policy.md",
         "scripts/bootstrap_env.sh",
+        "scripts/plan_setup.py",
         "scripts/prepare_assets.py",
         "agents/openai.yaml"
       ],
@@ -154,6 +155,7 @@
         "SKILL.md",
         "references/training-policy.md",
         "agents/openai.yaml",
+        "scripts/run_training.py",
         "scripts/write_outputs.py"
       ],
       "output_mode": {

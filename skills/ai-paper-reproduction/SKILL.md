@@ -63,6 +63,8 @@ Rules:
 - README-first: use repository files to clarify, not casually override, the README.
 - Aim for minimal trustworthy reproduction rather than maximum task coverage.
 - Treat smoke tests, startup verification, and early-step checks as valid training evidence when full training is not appropriate.
+- In trusted reproduction, a documented training command should first be checked through startup verification or a short monitoring window, then paused for explicit human confirmation before broader training continues.
+- In explicitly authorized explore-lane execution, the training record can continue without the trusted-lane confirmation pause, but it must stay isolated from trusted conclusions.
 - Record unresolved gaps rather than fabricating confidence.
 
 ## Patch policy
@@ -109,11 +111,12 @@ See `references/research-safety-principles.md`.
 5. Call `analyze-project` only when repo structure, insertion points, or suspicious implementation patterns need a read-only pass before continuing.
 6. Run a conservative smoke check or documented inference or evaluation command with `minimal-run-and-audit`.
 7. If the selected trustworthy target is documented training startup, short-run verification, or resume, hand execution to `run-train` instead of `minimal-run-and-audit`.
-8. Stop for human review if protocol meaning, model semantics, or result interpretation would otherwise be changed implicitly.
-9. Use `paper-context-resolver` only if README and repo files leave a narrow reproduction-critical gap that blocks the current target.
-10. Never auto-route into `explore-code` or `explore-run`; exploration requires explicit user authorization.
-11. Write the standardized outputs with evidence, assumptions, deviations, and next safe action.
-12. Give the user a short final note in the user's language.
+8. When training is selected inside trusted reproduction, let `run-train` capture the startup evidence first, then surface a human review checkpoint before any fuller training claim.
+9. Stop for human review if protocol meaning, model semantics, or result interpretation would otherwise be changed implicitly.
+10. Use `paper-context-resolver` only if README and repo files leave a narrow reproduction-critical gap that blocks the current target.
+11. Never auto-route into `explore-code` or `explore-run`; exploration requires explicit user authorization.
+12. Write the standardized outputs with evidence, assumptions, deviations, and next safe action.
+13. Give the user a short final note in the user's language.
 
 ## Required outputs
 
