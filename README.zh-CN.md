@@ -1,43 +1,107 @@
-# ai-paper-reproduction-skills
+# 🚀 ai-paper-reproduction-skills
 
-[![Language: English](https://img.shields.io/badge/Language-English-1F6FEB?style=for-the-badge)](./README.md)
-[![语言：简体中文](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-238636?style=for-the-badge)](./README.zh-CN.md)
+<p>
+  <a href="./README.md">🇺🇸 English</a> ·
+  <a href="./README.zh-CN.md">🇨🇳 简体中文</a>
+</p>
 
-🚀 面向深度学习研究工作流的 lane-aware skills 仓库。
+<p>
+  <img alt="trusted by default" src="https://img.shields.io/badge/lane-trusted%20by%20default-1f6feb?style=flat-square">
+  <img alt="explicit exploration" src="https://img.shields.io/badge/explore-explicit%20only-238636?style=flat-square">
+  <img alt="clients" src="https://img.shields.io/badge/clients-Agent%20Skills%20%C2%B7%20Codex%20%C2%B7%20Claude%20Code-6f42c1?style=flat-square">
+  <img alt="skills" src="https://img.shields.io/badge/skills-11-8b949e?style=flat-square">
+</p>
 
-这个仓库围绕一个默认规则构建：`trusted by default`。它的目标不是让 AI 无约束地改写科研代码，而是为复现、分析、训练、调试和显式授权的探索提供可审计、可回看、可分流的工作流。
+面向深度学习科研工作流的 lane-aware skill 仓库。
 
-🛠️ `ai-paper-reproduction` · 🧭 `env-and-assets-bootstrap` · 🔍 `analyze-project` · ✅ `minimal-run-and-audit` · 🧪 `run-train` · 🩺 `safe-debug` · 🧬 `explore-code` · 📈 `explore-run`
+> 🧭 `trusted` 负责复现、环境准备、分析、训练验证和安全调试。  
+> 🔬 `explore` 只在研究者显式授权后处理候选性探索工作。  
+> 🤝 同一套 `SKILL.md` 可以在 Agent Skills、Codex 和 Claude Code 中复用。
 
-## 🧭 仓库定位
+这个仓库围绕一个默认原则构建：`trusted by default`。
 
-**这个仓库适合什么**
+- 模糊请求默认进入 trusted lane
+- 探索必须显式授权
+- trusted 输出强调可审计和可复看
+- explore 输出强调候选性和可丢弃性
+
+本仓库采用开放的 `SKILL.md` 结构，因此既可以安装到中立的 Agent Skills 目录，也可以安装到 Codex 和 Claude Code。共享本地安装优先推荐 `~/.agents/skills/` 或 `./.agents/skills/`；客户端专属目录 `~/.codex/skills/` 和 `~/.claude/skills/` 也继续支持。
+
+🛠️ `ai-paper-reproduction` · 🔬 `research-explore` · 🧭 `env-and-assets-bootstrap` · 🔍 `analyze-project` · ✅ `minimal-run-and-audit` · 🧪 `run-train` · 🩺 `safe-debug` · 🧬 `explore-code` · 📈 `explore-run`
+
+## ✨ 仓库覆盖范围
+
+**适合处理**
 
 - README-first 的 AI 仓库复现
-- 保守的环境、数据集、checkpoint 与 cache 规划
-- 只读的项目与模型分析
-- 可信的训练启动验证与训练记录
+- 保守的环境、数据集、checkpoint 和 cache 规划
+- 只读的仓库与模型结构分析
+- trusted 训练启动验证和有界训练监控
 - 科研仓库中的安全调试
-- 明确授权后的探索性代码与实验尝试
+- 已显式授权的探索性代码和运行工作
+- 基于 `current_research` 的端到端科研探索
 
-**这个仓库不适合什么**
+**不适合处理**
 
 - 通用论文总结
 - 无边界的自主科研 agent
-- 默认大规模 AI 驱动的代码重写
+- 默认的大规模代码重写
+- 在 trusted baseline 上隐式开展实验
 
-## 🔒 核心原则
+## 🧭 如何选择入口
 
-- trusted by default
-- README-first for reproduction
-- explicit exploration only
-- low-risk changes before code edits
-- audit-heavy trusted outputs
-- summary-heavy exploratory outputs
+| 你的目标 | 对应 skill |
+|---|---|
+| 从 README 出发端到端复现仓库 | `ai-paper-reproduction` |
+| 基于 `current_research` 做端到端代码加运行探索 | `research-explore` |
+| 不改代码、不跑重任务，只分析仓库 | `analyze-project` |
+| 规划环境、数据、checkpoint 和 cache | `env-and-assets-bootstrap` |
+| 保守执行 README 中的推理或评测命令 | `minimal-run-and-audit` |
+| 保守启动或恢复训练 | `run-train` |
+| 安全诊断 traceback 或训练/推理失败 | `safe-debug` |
+| 只做隔离分支上的探索性代码修改 | `explore-code` |
+| 只做隔离的探索性实验运行 | `explore-run` |
 
-共享路由、分支、输出和坑点规则都放在 [references/](references/) 下。
+当前仓库内的 helper skills：
 
-## 🗺️ 总体 lane 结构图
+- `repo-intake-and-plan`
+- `paper-context-resolver`
+
+## 🔀 Lanes
+
+### 🛡️ 可信 lane
+
+trusted lane 用于复现、环境准备、分析、有界执行、训练验证和调试。
+
+- 主要端到端 orchestrator：`ai-paper-reproduction`
+- 输出目录：`repro_outputs/`、`train_outputs/`、`analysis_outputs/`、`debug_outputs/`
+- 默认原则：优先保持科学语义，减少未经审查的语义性改动，显式暴露假设和 blocker
+
+### 🔬 探索 lane
+
+explore lane 只在研究者明确授权候选性探索时使用。
+
+- 主要端到端 orchestrator：`research-explore`
+- 窄叶子 skill：`explore-code`、`explore-run`
+- 输出目录：`explore_outputs/`
+- 核心锚点：`current_research`
+
+`current_research` 应该是一个可定位、可持久引用的对象，例如 branch、commit、checkpoint、run record，或者已经训练过的本地模型状态。它不是“自动可信基线”，而是当前探索所依附的研究上下文。
+
+### 🧰 辅助 lane
+
+helper 技能保持窄职责，通常由 orchestrator 调用，而不是作为第一入口直接使用。
+
+## 🤝 客户端兼容性
+
+`SKILL.md` 是这个仓库里真正的跨客户端 canonical contract。
+
+- 便携性的核心：`SKILL.md`、仓库内的 `scripts/`、`references/`
+- 可选的 Codex UI metadata：`agents/openai.yaml`
+- 可选的 Claude Code 项目级入口：`.claude/commands/*.md`
+- 不允许把 skill 的实际行为绑定到某个客户端专属 metadata 上
+
+详见 [references/client-compatibility-policy.md](references/client-compatibility-policy.md)。
 
 ```mermaid
 flowchart TD
@@ -52,213 +116,247 @@ flowchart TD
     C --> C5[run-train]
     C --> C6[safe-debug]
 
-    D --> D1[explore-code]
-    D --> D2[explore-run]
+    D --> D1[research-explore]
+    D --> D2[explore-code]
+    D --> D3[explore-run]
 
     C1 -. helper .-> H1[repo-intake-and-plan]
     C1 -. helper .-> H2[paper-context-resolver]
-
-    C --> O1[repro_outputs / train_outputs / analysis_outputs / debug_outputs]
-    D --> O2[explore_outputs]
 ```
 
 ## 📦 安装
 
-安装完整 skill 集合：
+从本地 clone 安装到中立的 Agent Skills 目录：
+
+```bash
+python scripts/install_skills.py --client agents --target ~/.agents/skills --force
+```
+
+安装到项目级 Agent Skills 目录：
+
+```bash
+python scripts/install_skills.py --client agents --target ./.agents/skills --force
+```
+
+使用默认中立目标安装：
+
+```bash
+python scripts/install_skills.py --force
+```
+
+在 Codex 中安装完整 skill 集合：
 
 ```bash
 npx skills add lllllllama/ai-paper-reproduction-skills --all
 ```
 
-只安装主 orchestrator：
+在 Codex 中只安装 trusted reproduction orchestrator：
 
 ```bash
 npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-paper-reproduction
 ```
 
-Local clone, Codex:
+从本地 clone 安装到 Codex：
 
 ```bash
 python scripts/install_skills.py --client codex --target ~/.codex/skills --force
 ```
 
-Local clone, Claude Code:
+从本地 clone 安装到 Claude Code：
 
 ```bash
 python scripts/install_skills.py --client claude --target ~/.claude/skills --force
 ```
 
-Project-scoped Claude Code install:
+安装到项目级 Claude Code skills 目录：
 
 ```bash
 python scripts/install_skills.py --client claude --target ./.claude/skills --force
 ```
 
-## 🧩 当前公开 skill 矩阵
+Claude Code 可以根据 description 自动激活这些 skills，也可以直接通过 `/ai-paper-reproduction`、`/research-explore`、`/safe-debug` 这类命令调用。
+
+这个仓库还提供了项目级 Claude Code slash commands，位于 `.claude/commands/`，覆盖以下主要入口：
+
+- `/ai-paper-reproduction`
+- `/research-explore`
+- `/analyze-project`
+- `/safe-debug`
+
+## 🧩 公开 Skill 矩阵
 
 | Lane | Skill | 作用 |
 |---|---|---|
-| Trusted | 🛠️ `ai-paper-reproduction` | README-first 的端到端复现主编排 |
-| Trusted | 🧭 `env-and-assets-bootstrap` | 环境、数据集、checkpoint 与 cache 的保守规划 |
-| Trusted | ✅ `minimal-run-and-audit` | 推理、评测、smoke 与 sanity 的可信执行 |
-| Trusted | 🔍 `analyze-project` | 只读项目分析、模型结构梳理与风险提示 |
-| Trusted | 🧪 `run-train` | 训练启动验证、恢复、有限监控与训练记录 |
-| Trusted | 🩺 `safe-debug` | 先分析、后建议、获批后再修的科研安全调试 |
-| Explore | 🧬 `explore-code` | 隔离分支上的探索性代码迁移、适配与缝合 |
-| Explore | 📈 `explore-run` | 小子集试探、短周期实验与候选结果排序 |
-| Helper | 🗂️ `repo-intake-and-plan` | README 命令提取与仓库扫描的窄辅助 skill |
-| Helper | 📄 `paper-context-resolver` | README 与论文之间窄缺口补全的辅助 skill |
+| 可信 | `ai-paper-reproduction` | 端到端 README-first 复现 orchestrator |
+| 可信 | `env-and-assets-bootstrap` | 保守的环境、数据、checkpoint 和 cache 规划 |
+| 可信 | `minimal-run-and-audit` | 保守的推理、评测、smoke 和 sanity 执行 |
+| 可信 | `analyze-project` | 只读的项目分析、模型梳理和风险暴露 |
+| 可信 | `run-train` | 训练启动验证、resume 处理、有界监控和训练记录 |
+| 可信 | `safe-debug` | 先分析后修复的科研安全调试 |
+| 探索 | `research-explore` | 基于 `current_research` 的端到端探索 orchestrator |
+| 探索 | `explore-code` | 隔离分支上的探索性代码改造、迁移和拼接 |
+| 探索 | `explore-run` | 小样本 probe、短周期实验和候选结果排序 |
+| 辅助 | `repo-intake-and-plan` | README 命令提取与仓库扫描 helper |
+| 辅助 | `paper-context-resolver` | README 与论文之间关键缺口补齐 helper |
 
-## 🔄 当前可信复现流程
+## 🔄 核心流程
 
-当前主 orchestrator 已经实现如下流程：
+### 🛠️ 可信复现流程
 
-1. 扫描仓库结构与 README。
-2. 提取已文档化命令。
-3. 选择最小可信目标，优先级为：
-   - 已文档化推理
-   - 已文档化评测
-   - 已文档化训练
-4. 生成保守的环境安装计划。
-5. 生成数据集、checkpoint、weights 与 cache 的保守资源清单。
-6. 执行选中的目标：
-   - 非训练目标走 trusted verify 路径
-   - 训练目标走 `run-train`
-7. 写出 `repro_outputs/`
-8. 如果选中了训练目标，额外写出 `train_outputs/`
+`ai-paper-reproduction` 的高层流程如下：
 
-## 🧪 Trusted 训练决策图
+1. 扫描仓库结构和 README
+2. 提取文档中的命令
+3. 按以下优先级选择最小可信目标：
+   - documented inference
+   - documented evaluation
+   - documented training
+4. 生成保守的环境与资产计划
+5. 通过 `minimal-run-and-audit` 或 `run-train` 执行
+6. 写出 `repro_outputs/`
+7. 如果目标是训练，再额外写出 `train_outputs/`
 
-```mermaid
-flowchart TD
-    A[根据 README 证据选中训练目标] --> B{当前 lane}
-    B -- Trusted --> C[startup_verification]
-    B -- Explore --> D[full_kickoff]
-    C --> E[记录早期训练证据]
-    E --> F[展示后续完整训练命令]
-    E --> G[展示保守时长预估]
-    E --> H[询问研究者是否继续完整训练]
-    D --> I[直接继续探索性训练记录，不触发 trusted 暂停]
-```
+### 🧪 可信训练语义
 
-## 🛡️ Trusted 训练行为
+trusted lane 中的训练默认保持保守。
 
-在 trusted 复现场景中，训练默认是保守的。
+- 如果 README 中存在更小的推理或评测目标，优先执行这些目标
+- 如果训练是当前最小可信目标，`run-train` 会先做 startup verification 或短窗口监控
+- trusted lane 不会静默转成开放式长时间训练
+- 输出应显式给出后续完整训练命令、保守时长提示，以及下一步安全动作
 
-- 如果 README 中存在更小的推理或评测目标，orchestrator 会优先走这些目标。
-- 如果训练是当前最小可信目标，则会先执行 startup verification 或短时监控训练。
-- 这一步不会默认被视为完整训练复现。
-- 在短时验证后，系统会展示：
-  - 后续完整训练将执行的命令
-  - 一个保守的训练时长提示
-  - 一个明确的人类确认点
+### 🔬 科研探索流程
 
-## 🔬 Explore 训练行为
+当任务同时涉及探索性代码工作和探索性运行时，应使用 `research-explore`。
 
-探索必须显式授权。
+1. 确认 `current_research`
+2. 创建或保留隔离的实验分支 / worktree
+3. 只有在仓库上下文仍不清晰时才调用 `analyze-project` 或 `env-and-assets-bootstrap`
+4. 视需要协调 `explore-code` 和 `explore-run`
+5. 所有结果都保持 candidate-only
+6. 写出 `explore_outputs/`
 
-- `explore-code` 和 `explore-run` 从来不是默认路由。
-- 在 explore lane 中，训练不会停在 trusted lane 的“先确认再继续”检查点。
-- 探索结果只能作为候选线索，不能自动宣称为可信复现成功。
+explore lane 不能把结果表述成 trusted reproduction success。
 
 ## 📁 输出目录
 
-| Directory | 作用 |
+| 目录 | 作用 |
 |---|---|
-| `repro_outputs/` | 可信复现主输出 |
-| `train_outputs/` | 可信训练执行输出 |
-| `analysis_outputs/` | 只读项目分析输出 |
-| `debug_outputs/` | 安全调试诊断与修复计划 |
-| `explore_outputs/` | 探索性改动和候选结果摘要 |
+| `repro_outputs/` | trusted 复现输出 |
+| `train_outputs/` | trusted 训练输出 |
+| `analysis_outputs/` | 只读分析输出 |
+| `debug_outputs/` | 调试诊断与修复计划 |
+| `explore_outputs/` | 探索性改动与候选运行摘要 |
 
 ## 💬 示例提示词
 
 **可信复现**
 
 ```text
-请使用 ai-paper-reproduction 处理这个 AI 仓库。保持 README-first，优先尝试文档中的推理或评测，不要做不必要的代码修改，并将结果写入 repro_outputs/。
+Use ai-paper-reproduction on this AI repo. Stay README-first, prefer documented inference or evaluation, avoid unnecessary repo changes, and write outputs to repro_outputs/.
+```
+
+**基于 current_research 的探索**
+
+```text
+Use research-explore on top of current_research improved-model@branch. Work on an isolated branch, coordinate code and run exploration together, try several variants, and rank candidates in explore_outputs/.
 ```
 
 **只读分析**
 
 ```text
-请使用 analyze-project 分析这个仓库。阅读代码，梳理模型结构和训练入口，标出可疑实现，但不要修改文件。
+Use analyze-project on this repo. Read the code, map the model and training entrypoints, and flag suspicious patterns without editing files.
 ```
 
 **可信训练**
 
 ```text
-请使用 run-train 在这个仓库上执行文档中的训练命令，先做保守的启动验证，并将记录写入 train_outputs/。
+Use run-train on this repo. Run the selected documented training command conservatively for startup verification and write train_outputs/.
 ```
 
-**安全调试**
+**Safe debug**
 
 ```text
-请使用 safe-debug 分析这段报错。先诊断原因，再给出最小安全修复建议，未获得我确认前不要直接修改代码。
+Use safe-debug on this traceback. Diagnose the failure first, propose the smallest safe fix, and do not patch until I approve.
 ```
 
-**显式探索**
+**仅探索性代码修改**
 
 ```text
-请使用 explore-code 在隔离分支上尝试一个 LoRA 适配，只把它视为探索任务，并把改动摘要写入 explore_outputs/。
+Use explore-code on an isolated branch. Try a LoRA adaptation for this backbone, keep it exploratory only, and summarize the changes in explore_outputs/.
 ```
 
+**仅探索性实验运行**
+
 ```text
-请使用 explore-run 在实验分支上做一个小子集短周期 sweep，对候选结果排序，并把结果仅作为探索候选写入 explore_outputs/。
+Use explore-run on an experiment branch. Do a small-subset short-cycle sweep, rank the top runs, and treat the results as candidates only.
 ```
 
 ## ✅ 本地验证
 
-运行完整验证集：
+运行仓库级检查：
 
 ```bash
 python scripts/validate_repo.py
-python scripts/test_bootstrap_env.py
-python scripts/test_install_targets.py
 python scripts/test_skill_registry.py
 python scripts/test_trigger_boundaries.py
+python scripts/test_claude_command_wrappers.py
 python scripts/test_readme_selection.py
+```
+
+运行输出与 orchestrator 回归：
+
+```bash
 python scripts/test_output_rendering.py
 python scripts/test_train_output_rendering.py
 python scripts/test_analysis_output_rendering.py
 python scripts/test_safe_debug_output_rendering.py
 python scripts/test_explore_output_rendering.py
 python scripts/test_explore_variant_matrix.py
-python scripts/test_setup_planning.py
+python scripts/test_research_explore_dry_run.py
 python scripts/test_orchestrator_dry_run.py
 python scripts/test_training_lane_routing.py
 ```
 
-如果安装行为变更，还应额外运行：
+运行环境和安装器回归：
 
 ```bash
+python scripts/test_bootstrap_env.py
+python scripts/test_install_targets.py
+python scripts/test_setup_planning.py
+python scripts/install_skills.py --client agents --target ./tmp/agents-skills --force
 python scripts/install_skills.py --client codex --target ./tmp/codex-skills --force
 python scripts/install_skills.py --client claude --target ./tmp/claude-skills --force
 ```
 
-## 🧠 路由摘要
+GitHub Actions 会在 `ubuntu-latest`、`macos-latest` 和 `windows-latest` 上验证这个仓库。
+
+## 📐 路由摘要
 
 - 模糊请求默认进入 trusted lane
 - 探索必须显式授权
-- trusted skill 不得自动掉入 exploration
-- explore skill 不得宣称 trusted reproduction success
-- 同级 skill 不应直接互调
+- trusted skills 不得自动掉入 exploration
+- explore 输出不得宣称 trusted reproduction success
+- 同级叶子 skills 不应彼此直接调用
+- 端到端任务应通过该任务族对应的 public orchestrator 进入
 
-## 📚 注册表与共享策略
+## 📚 参考资料
 
 - Skill registry: [references/skill-registry.json](references/skill-registry.json)
+- Client compatibility policy: [references/client-compatibility-policy.md](references/client-compatibility-policy.md)
 - Routing policy: [references/routing-policy.md](references/routing-policy.md)
+- Trigger boundary policy: [references/trigger-boundary-policy.md](references/trigger-boundary-policy.md)
 - Branch and commit policy: [references/branch-and-commit-policy.md](references/branch-and-commit-policy.md)
 - Output contract: [references/output-contract.md](references/output-contract.md)
 - Research pitfall checklist: [references/research-pitfall-checklist.md](references/research-pitfall-checklist.md)
 
 ## ⚠️ 当前边界
 
-- `run-train` 目前是有界训练监控器，不是完整的长期训练调度器。
-- trusted reproduction 仍然严格避免静默修改实验语义。
-- helper skill 保持狭窄边界，不是公开的“万能入口”。
-- exploratory work 必须与 trusted baseline 隔离。
+- `run-train` 是有界训练监控器，不是完整的长时间训练调度器
+- trusted reproduction 仍然严格避免静默语义改动
+- helper skills 保持窄职责，不会扩张成公共的“大一统入口”
+- exploratory work 必须与 trusted baseline 隔离
 
-## 🎯 最终范围
+## 🎯 仓库定位
 
-这是一个强调安全性、可观测性和复用性的深度学习科研 skills 仓库。
+这是一个强调安全性、可观察性和可复用性的深度学习科研 skill 仓库。
