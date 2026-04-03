@@ -4,6 +4,8 @@
 
 Use this reference when preparing a `variant_spec.json` for `explore-run` or `research-explore`.
 
+In the third scenario, `variant_spec` is the run-level section inside a larger `research_campaign.json` / `research_campaign.yaml`. See [skills/research-explore/references/research-campaign-spec.md](../skills/research-explore/references/research-campaign-spec.md).
+
 The spec describes:
 
 - which `current_research` context the exploration is anchored to
@@ -148,6 +150,7 @@ Accepted `metric_goal` values include:
 ## Notes
 
 - Keep `current_research` durable and auditable.
+- In campaign mode, pair `variant_spec` with a frozen task family, dataset, evaluation source, and provided SOTA table.
 - Keep exploratory output candidate-only.
 - Do not treat pre-execution ranking scores as trusted scientific conclusions.
 - If `primary_metric` is omitted, downstream ranking falls back to parsed `best_metric`.

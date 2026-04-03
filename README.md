@@ -53,7 +53,7 @@ The skills use the open `SKILL.md` layout, so the same repository can be install
 | If you want to... | Use |
 |---|---|
 | Reproduce a repository end-to-end from the README | `ai-paper-reproduction` |
-| Explore code-and-run variants end-to-end on top of `current_research` | `research-explore` |
+| Run a third-scenario campaign on top of `current_research` with frozen task, eval, and SOTA inputs | `research-explore` |
 | Analyze the repository without editing or running heavy jobs | `analyze-project` |
 | Prepare environment, dataset, checkpoint, and cache assumptions | `env-and-assets-bootstrap` |
 | Run a documented inference or evaluation command conservatively | `minimal-run-and-audit` |
@@ -193,7 +193,7 @@ This repository also ships project-scoped Claude Code slash commands under `.cla
 | Trusted | `analyze-project` | Read-only project analysis, model mapping, and risk surfacing |
 | Trusted | `run-train` | Training startup verification, resume handling, bounded monitoring, and training records |
 | Trusted | `safe-debug` | Research-safe debugging: analyze first, patch only after approval |
-| Explore | `research-explore` | End-to-end exploratory orchestration on top of `current_research` |
+| Explore | `research-explore` | Third-scenario exploratory orchestration on top of `current_research` with repo understanding, idea gating, and governed experiments |
 | Explore | `explore-code` | Exploratory code adaptation, transplant, and stitching on isolated branches |
 | Explore | `explore-run` | Small-subset probes, short-cycle trials, and ranked exploratory runs |
 | Helper | `repo-intake-and-plan` | Narrow helper for repo scanning and README command extraction |
@@ -227,16 +227,36 @@ Training is intentionally conservative in the trusted lane.
 
 ### 🔬 Exploratory research flow
 
-`research-explore` is the end-to-end explore orchestrator when the task spans both exploratory code work and exploratory runs.
+`research-explore` is now optimized for the third scenario: the researcher has already frozen the task family, dataset, evaluation method, and provided SOTA table, and wants the AI to govern implementation and experiments on top of `current_research`.
 
 1. Confirm `current_research`.
 2. Create or reserve an isolated experiment branch or worktree.
-3. Use `analyze-project` or `env-and-assets-bootstrap` only when the current repository context is still unclear.
-4. Coordinate `explore-code` and `explore-run` as needed.
-5. Keep all results candidate-only.
-6. Write `explore_outputs/`.
+3. Produce repository-understanding artifacts in `analysis_outputs/`.
+4. Run a baseline gate against the provided evaluation command and SOTA table.
+5. Run an idea gate across the supplied candidate directions.
+6. Build a single-variable experiment manifest.
+7. Run short-cycle candidate execution, and optionally a later full run.
+8. Keep all results candidate-only.
+9. Write `explore_outputs/`.
 
-The explore lane must not claim trusted reproduction success.
+The explore lane must not claim trusted reproduction success, global benchmark completeness, or verified novelty.
+
+### Campaign Inputs
+
+`research-explore` still accepts a plain `variant_spec.json`, but the preferred input for the third scenario is `research_campaign.json` or `research_campaign.yaml`.
+
+The campaign should freeze:
+
+- `task_family`
+- `dataset`
+- `benchmark`
+- `evaluation_source`
+- `sota_reference`
+- `candidate_ideas`
+- `compute_budget`
+- `variant_spec`
+
+See [skills/research-explore/references/research-campaign-spec.md](skills/research-explore/references/research-campaign-spec.md).
 
 ### 📈 Exploratory candidate ranking
 
@@ -284,9 +304,9 @@ Minimal variant-spec example:
 |---|---|
 | `repro_outputs/` | Trusted reproduction bundle |
 | `train_outputs/` | Trusted training execution bundle |
-| `analysis_outputs/` | Read-only project analysis |
+| `analysis_outputs/` | Read-only project analysis, research map, change map, and eval contract |
 | `debug_outputs/` | Safe debug diagnosis and patch plan |
-| `explore_outputs/` | Exploratory changeset and ranked run summary |
+| `explore_outputs/` | Exploratory changeset, idea gate, experiment plan, ledger, and ranked run summary |
 
 ## 💬 Example Prompts
 
@@ -300,6 +320,12 @@ Use ai-paper-reproduction on this AI repo. Stay README-first, prefer documented 
 
 ```text
 Use research-explore on top of current_research improved-model@branch. Work on an isolated branch, coordinate code and run exploration together, try several variants, and rank candidates in explore_outputs/.
+```
+
+**Third-scenario campaign exploration**
+
+```text
+Use research-explore with research_campaign.json. Treat the provided task family, dataset, evaluation source, and SOTA table as frozen inputs, rank the candidate ideas, keep each candidate single-variable, and write governed outputs to analysis_outputs/ and explore_outputs/.
 ```
 
 **Read-only analysis**
@@ -354,6 +380,9 @@ python scripts/test_safe_debug_output_rendering.py
 python scripts/test_explore_output_rendering.py
 python scripts/test_explore_variant_matrix.py
 python scripts/test_research_explore_dry_run.py
+python scripts/test_research_explore_campaign_flow.py
+python scripts/test_research_explore_campaign_abandon.py
+python scripts/test_research_explore_campaign_checkpoint.py
 python scripts/test_orchestrator_dry_run.py
 python scripts/test_training_lane_routing.py
 ```

@@ -95,6 +95,8 @@ def write_changeset(output_dir: Path, context: Dict[str, Any], mode: str) -> Non
         f"- Experiment branch: `{explore_context['experiment_branch']}`",
         f"- Isolated workspace: `{explore_context['isolated_workspace']}`",
         f"- Workspace mode: `{explore_context.get('workspace_mode') or 'unknown'}`",
+        f"- Human checkpoint state: `{context.get('human_checkpoint_state', 'not-applicable')}`",
+        f"- SOTA claim state: `{context.get('sota_claim_state', 'not-applicable')}`",
         f"- Trusted promotion candidate: `{context.get('trusted_promote_candidate', False)}`",
         "",
         "## Source references",
@@ -129,6 +131,7 @@ def write_top_runs(output_dir: Path, context: Dict[str, Any], mode: str) -> None
         f"- Variant count: `{context.get('variant_count', 0)}`",
         f"- Pruned variant count: `{context.get('pruned_variant_count', 0)}`",
         f"- Current research: `{explore_context['current_research']}`",
+        f"- Human checkpoint state: `{context.get('human_checkpoint_state', 'not-applicable')}`",
         "",
     ]
     if selection_policy.get("factors"):
@@ -153,14 +156,28 @@ def write_top_runs(output_dir: Path, context: Dict[str, Any], mode: str) -> None
                 "",
             ]
         )
+    if context.get("baseline_gate", {}).get("decision"):
+        lines.extend(
+            [
+                f"- Baseline gate: `{context['baseline_gate']['decision']}`",
+                "",
+            ]
+        )
+    if context.get("sota_claim_state"):
+        lines.extend(
+            [
+                f"- SOTA claim state: `{context['sota_claim_state']}`",
+                "",
+            ]
+        )
     lines.extend(
         [
-        "## Candidate hypotheses",
-        "",
-        bullets(context.get("candidate_hypotheses", [])),
-        "",
-        "## Best runs",
-        "",
+            "## Candidate hypotheses",
+            "",
+            bullets(context.get("candidate_hypotheses", [])),
+            "",
+            "## Best runs",
+            "",
         ]
     )
     best_runs = context.get("best_runs", [])
@@ -180,9 +197,7 @@ def write_top_runs(output_dir: Path, context: Dict[str, Any], mode: str) -> None
                     f"ranking_metric=`{ranking_metric['name']}={ranking_metric['value']}` ({ranking_metric.get('goal', 'maximize')})"
                 )
             parts.append(f"summary={item.get('summary', 'none')}")
-            lines.append(
-                " ".join(parts)
-            )
+            lines.append(" ".join(parts))
     lines.extend(
         [
             "",
@@ -204,9 +219,129 @@ def write_top_runs(output_dir: Path, context: Dict[str, Any], mode: str) -> None
     (output_dir / "TOP_RUNS.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_idea_gate(output_dir: Path, context: Dict[str, Any]) -> None:
+    idea_gate = context.get("idea_gate", {})
+    ranked = idea_gate.get("ranked_ideas", [])
+    selected = context.get("selected_idea") or idea_gate.get("selected_idea")
+    lines = [
+        "# Idea Gate",
+        "",
+        f"- Decision: `{idea_gate.get('decision', 'not-configured')}`",
+        f"- Human checkpoint state: `{context.get('human_checkpoint_state', 'not-applicable')}`",
+        "",
+        "## Ranked Ideas",
+        "",
+    ]
+    if not ranked:
+        lines.append("- None.")
+    else:
+        for item in ranked:
+            lines.append(
+                f"- `{item.get('id', 'unknown')}` score=`{item.get('idea_score', 'n/a')}` summary={item.get('summary', 'none')}"
+            )
+    lines.extend(
+        [
+            "",
+            "## Selected Idea",
+            "",
+        ]
+    )
+    if not selected:
+        lines.append("- None.")
+    else:
+        lines.extend(
+            [
+                f"- id: `{selected.get('id', 'unknown')}`",
+                f"- summary: {selected.get('summary', 'none')}",
+                f"- target_component: `{selected.get('target_component', 'unspecified')}`",
+                f"- change_scope: `{selected.get('change_scope', 'unspecified')}`",
+            ]
+        )
+    (output_dir / "IDEA_GATE.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_experiment_plan(output_dir: Path, context: Dict[str, Any]) -> None:
+    manifest = context.get("experiment_manifest", {})
+    short_run_gate = context.get("short_run_gate", {})
+    lines = [
+        "# Experiment Plan",
+        "",
+        f"- Current research: `{current_research_value(context)}`",
+        f"- Parent baseline: `{manifest.get('parent_baseline', current_research_value(context))}`",
+        f"- Idea id: `{manifest.get('idea_id', 'none')}`",
+        f"- Primary metric: `{manifest.get('primary_metric', context.get('metric_policy', {}).get('primary_metric') or 'unspecified')}`",
+        f"- Eval contract ref: `{manifest.get('eval_contract_ref', 'analysis_outputs/EVAL_CONTRACT.md')}`",
+        f"- Promotion rule: `{manifest.get('promotion_rule', 'manual-review')}`",
+        "",
+        "## Hypothesis",
+        "",
+        bullets([manifest.get("hypothesis", "")]),
+        "",
+        "## Changed Files",
+        "",
+        bullets(manifest.get("changed_files", [])),
+        "",
+        "## Config Overrides",
+        "",
+        bullets(context.get("config_diff_summary", [])),
+        "",
+        "## Supporting Changes",
+        "",
+        bullets(manifest.get("supporting_changes", [])),
+        "",
+        "## Short-Run Gate",
+        "",
+        f"- Status: `{short_run_gate.get('status', 'not-run')}`",
+        f"- Reason: {short_run_gate.get('reason', 'none')}",
+        "",
+    ]
+    (output_dir / "EXPERIMENT_PLAN.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_experiment_ledger(output_dir: Path, context: Dict[str, Any]) -> None:
+    ledger = context.get("experiment_ledger", {})
+    baseline = ledger.get("baseline", {})
+    candidate_runs = ledger.get("candidate_runs", [])
+    lines = [
+        "# Experiment Ledger",
+        "",
+        "## Baseline",
+        "",
+        f"- Decision: `{context.get('baseline_gate', {}).get('decision', 'not-configured')}`",
+        f"- Metric: `{baseline.get('metric_name', 'unknown')}={baseline.get('metric_value', 'unknown')}`",
+        f"- Runtime seconds: `{baseline.get('runtime_seconds', 0)}`",
+        "",
+        "## Candidate Runs",
+        "",
+    ]
+    if not candidate_runs:
+        lines.append("- None.")
+    else:
+        for item in candidate_runs:
+            lines.append(
+                f"- `{item.get('id', 'unknown')}` phase=`{item.get('phase', 'unknown')}` "
+                f"metric_diff=`{item.get('baseline_metric_diff', 'n/a')}` runtime_seconds=`{item.get('runtime_seconds', 0)}` "
+                f"stop_reason=`{item.get('stop_reason', 'unknown')}` rollback=`{item.get('rollback_target', 'unknown')}`"
+            )
+    (output_dir / "EXPERIMENT_LEDGER.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def write_status(output_dir: Path, context: Dict[str, Any], mode: str) -> None:
     explore_context = explore_context_payload(context)
     current_research = explore_context["current_research"]
+    outputs = {
+        "changeset": "explore_outputs/CHANGESET.md",
+        "top_runs": "explore_outputs/TOP_RUNS.md",
+        "status": "explore_outputs/status.json",
+    }
+    if mode == "research":
+        outputs.update(
+            {
+                "idea_gate": "explore_outputs/IDEA_GATE.md",
+                "experiment_plan": "explore_outputs/EXPERIMENT_PLAN.md",
+                "experiment_ledger": "explore_outputs/EXPERIMENT_LEDGER.md",
+            }
+        )
     payload = {
         "schema_version": context.get("schema_version", "1.0"),
         "context_id": context.get("context_id") or explore_context.get("context_id"),
@@ -217,6 +352,7 @@ def write_status(output_dir: Path, context: Dict[str, Any], mode: str) -> None:
         "experiment_branch": explore_context["experiment_branch"],
         "isolated_workspace": explore_context["isolated_workspace"],
         "explore_context": explore_context,
+        "campaign": context.get("campaign", {}),
         "source_repo_refs": context.get("source_repo_refs", []),
         "raw_variant_count": context.get("raw_variant_count", context.get("variant_count", 0)),
         "variant_count": context.get("variant_count", 0),
@@ -224,6 +360,13 @@ def write_status(output_dir: Path, context: Dict[str, Any], mode: str) -> None:
         "variant_budget": context.get("variant_budget", {"max_variants": 0, "max_short_cycle_runs": 0}),
         "selection_policy": context.get("selection_policy", {}),
         "metric_policy": context.get("metric_policy", {"primary_metric": None, "metric_goal": "maximize"}),
+        "eval_contract": context.get("eval_contract", {}),
+        "baseline_gate": context.get("baseline_gate", {}),
+        "idea_gate": context.get("idea_gate", {}),
+        "selected_idea": context.get("selected_idea"),
+        "experiment_manifest": context.get("experiment_manifest", {}),
+        "experiment_ledger": context.get("experiment_ledger", {}),
+        "short_run_gate": context.get("short_run_gate", {}),
         "best_runs": context.get("best_runs", []),
         "candidate_edit_targets": context.get("candidate_edit_targets", []),
         "code_tracks": context.get("code_tracks", []),
@@ -234,11 +377,9 @@ def write_status(output_dir: Path, context: Dict[str, Any], mode: str) -> None:
         "execution_notes": context.get("execution_notes", []),
         "trusted_promote_candidate": context.get("trusted_promote_candidate", False),
         "explicit_explore_authorization": explore_context["explicit_explore_authorization"],
-        "outputs": {
-            "changeset": "explore_outputs/CHANGESET.md",
-            "top_runs": "explore_outputs/TOP_RUNS.md",
-            "status": "explore_outputs/status.json",
-        },
+        "human_checkpoint_state": context.get("human_checkpoint_state", "not-applicable"),
+        "sota_claim_state": context.get("sota_claim_state", "not-applicable"),
+        "outputs": outputs,
         "notes": context.get("notes", []),
     }
     (output_dir / "status.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -248,6 +389,10 @@ def write_bundle(mode: str, output_dir: Path, context: Dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     write_changeset(output_dir, context, mode)
     write_top_runs(output_dir, context, mode)
+    if mode == "research":
+        write_idea_gate(output_dir, context)
+        write_experiment_plan(output_dir, context)
+        write_experiment_ledger(output_dir, context)
     write_status(output_dir, context, mode)
 
 

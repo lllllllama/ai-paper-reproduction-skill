@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan explicit exploratory research work on top of current_research."""
+"""Plan or execute explicit exploratory research work on top of current_research."""
 
 from __future__ import annotations
 
@@ -10,12 +10,23 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 DURABLE_ANCHOR_HASH_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 EXTERNAL_REFERENCE_PREFIXES = ("run:", "checkpoint:", "branch:", "commit:", "model:", "state:")
+DEFAULT_BASELINE_GATE = {
+    "maximize": {"borderline_gap": 1.0, "abandon_gap": 2.0},
+    "minimize": {"borderline_relative_gap": 0.02, "abandon_relative_gap": 0.05},
+}
+DEFAULT_EXECUTION_POLICY = {
+    "run_selected_variants": False,
+    "max_executed_variants": 1,
+    "variant_timeout": 60,
+    "run_full_after_short_run": False,
+}
 
 
 def run_json(script: Path, args: List[str]) -> Dict[str, Any]:
@@ -122,9 +133,7 @@ def validate_existing_worktree(worktree_root: Path, expected_branch: str) -> Dic
     actual_root = Path(run_text(["git", "rev-parse", "--show-toplevel"], cwd=worktree_root)).resolve()
     actual_branch = run_text(["git", "symbolic-ref", "--quiet", "--short", "HEAD"], cwd=worktree_root)
     if actual_root != worktree_root.resolve():
-        raise ValueError(
-            f"Existing experiment workspace `{worktree_root}` is not a valid git worktree root."
-        )
+        raise ValueError(f"Existing experiment workspace `{worktree_root}` is not a valid git worktree root.")
     if actual_branch != expected_branch:
         raise ValueError(
             f"Existing experiment workspace `{worktree_root}` is on branch `{actual_branch}`, expected `{expected_branch}`."
@@ -181,7 +190,6 @@ def ensure_experiment_workspace(repo_path: Path, experiment_branch: str) -> Dict
         else:
             run_text(["git", "worktree", "add", "-b", experiment_branch, str(worktree_root), head_sha], cwd=git_root)
             created_branch = True
-            branch_exists = True
         branch_sha = run_text(["git", "rev-parse", "--verify", branch_ref], cwd=git_root)
         worktree_info = validate_existing_worktree(worktree_root, experiment_branch)
 
@@ -199,63 +207,285 @@ def ensure_experiment_workspace(repo_path: Path, experiment_branch: str) -> Dict
     }
 
 
-def load_variant_spec(path: Path, current_research: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    spec = json.loads(path.read_text(encoding="utf-8-sig"))
-    explicit_value = spec.get("current_research") or spec.get("baseline_ref")
+def normalize_task_family(value: Any) -> Optional[str]:
+    text = str(value or "").strip().lower()
+    return text or None
+
+
+def safe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
+
+
+def clamp_score(value: Optional[float], default: float = 0.5) -> float:
+    if value is None:
+        return default
+    return max(0.0, min(1.0, float(value)))
+
+
+def normalize_metric_goal(value: Any) -> str:
+    text = str(value or "maximize").strip().lower()
+    if text in {"min", "minimize", "lower", "lower_is_better"}:
+        return "minimize"
+    return "maximize"
+
+
+def load_structured_file(path: Path) -> Dict[str, Any]:
+    text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        try:
+            import yaml  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("YAML input requires PyYAML to be installed.") from exc
+        payload = yaml.safe_load(text) or {}
+    else:
+        payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Structured input `{path}` must contain a top-level object.")
+    return payload
+
+
+def normalize_variant_spec(spec: Dict[str, Any], current_research: str) -> Dict[str, Any]:
+    normalized = dict(spec)
+    explicit_value = normalized.get("current_research") or normalized.get("baseline_ref")
     if explicit_value and explicit_value != current_research:
         raise ValueError(
-            f"Variant spec current research `{explicit_value}` does not match --current-research `{current_research}`."
+            f"Variant spec current research `{explicit_value}` does not match current_research `{current_research}`."
         )
-    spec["current_research"] = current_research
-    spec.setdefault("baseline_ref", current_research)
-    return spec, spec
+    normalized["current_research"] = current_research
+    normalized.setdefault("baseline_ref", current_research)
+    normalized.setdefault("variant_axes", {})
+    normalized.setdefault("subset_sizes", [None])
+    normalized.setdefault("short_run_steps", [None])
+    return normalized
 
 
-def build_variant_matrix(planner_script: Path, variant_spec_json: str, current_research: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    if not variant_spec_json:
-        empty_spec = {"current_research": current_research, "baseline_ref": current_research}
-        empty_matrix = {
-            "schema_version": "1.0",
-            "current_research": current_research,
-            "baseline_ref": current_research,
-            "base_command": None,
-            "raw_variant_count": 0,
-            "variant_count": 0,
-            "pruned_variant_count": 0,
-            "variant_budget": {
-                "max_variants": 0,
-                "max_short_cycle_runs": 0,
-            },
-            "metric_policy": {
-                "primary_metric": None,
-                "metric_goal": "maximize",
-            },
-            "variants": [],
-        }
-        return empty_matrix, empty_spec
+def load_variant_spec(path: Path, current_research: str) -> Dict[str, Any]:
+    return normalize_variant_spec(load_structured_file(path), current_research)
 
-    spec_path = Path(variant_spec_json).resolve()
-    spec, normalized_spec = load_variant_spec(spec_path, current_research)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
-        temp_spec_path = Path(handle.name)
-        handle.write(json.dumps(normalized_spec, indent=2, ensure_ascii=False))
 
-    try:
-        matrix = run_json(planner_script, ["--spec-json", str(temp_spec_path), "--json"])
-    finally:
-        if temp_spec_path.exists():
-            temp_spec_path.unlink()
+def normalize_evaluation_source(raw: Any, variant_spec: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(raw, str):
+        source = {"command": raw}
+    elif isinstance(raw, dict):
+        source = dict(raw)
+    else:
+        source = {}
 
-    return matrix, spec
+    primary_metric = source.get("primary_metric") or variant_spec.get("primary_metric")
+    metric_goal = normalize_metric_goal(source.get("metric_goal") or variant_spec.get("metric_goal"))
+    execution_kind = str(source.get("execution_kind") or "").strip().lower()
+    return {
+        "command": str(source.get("command") or ""),
+        "path": str(source.get("path") or ""),
+        "primary_metric": primary_metric,
+        "metric_goal": metric_goal,
+        "execution_kind": execution_kind or None,
+        "artifacts": list(source.get("artifacts", []) or []),
+        "notes": list(source.get("notes", []) or []),
+        "split": str(source.get("split") or ""),
+    }
+
+
+def normalize_sota_reference(items: Any, primary_metric: Optional[str], metric_goal: str) -> List[Dict[str, Any]]:
+    if not isinstance(items, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for index, item in enumerate(items, start=1):
+        if isinstance(item, (int, float)):
+            normalized.append(
+                {
+                    "id": f"sota-{index:03d}",
+                    "name": f"SOTA reference {index}",
+                    "metric": primary_metric,
+                    "metric_goal": metric_goal,
+                    "value": float(item),
+                    "source": "",
+                    "notes": "",
+                }
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        value = safe_float(item.get("value"))
+        if value is None:
+            continue
+        normalized.append(
+            {
+                "id": str(item.get("id") or f"sota-{index:03d}"),
+                "name": str(item.get("name") or item.get("paper") or f"SOTA reference {index}"),
+                "metric": str(item.get("metric") or primary_metric or ""),
+                "metric_goal": normalize_metric_goal(item.get("metric_goal") or metric_goal),
+                "value": value,
+                "source": str(item.get("source") or item.get("url") or ""),
+                "notes": str(item.get("notes") or ""),
+            }
+        )
+    return normalized
+
+
+def normalize_compute_budget(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    budget = dict(raw)
+    if "max_runtime_hours" in budget:
+        runtime = safe_float(budget.get("max_runtime_hours"))
+        if runtime is not None:
+            budget["max_runtime_hours"] = runtime
+    return budget
+
+
+def normalize_baseline_gate(raw: Any, metric_goal: str) -> Dict[str, Any]:
+    gate = dict(raw) if isinstance(raw, dict) else {}
+    defaults = DEFAULT_BASELINE_GATE[metric_goal]
+    normalized = {
+        "metric_goal": metric_goal,
+        "borderline_gap": safe_float(gate.get("borderline_gap")),
+        "abandon_gap": safe_float(gate.get("abandon_gap")),
+        "borderline_relative_gap": safe_float(gate.get("borderline_relative_gap")),
+        "abandon_relative_gap": safe_float(gate.get("abandon_relative_gap")),
+        "timeout": int(gate.get("timeout") or 60),
+        "max_steps": int(gate.get("max_steps") or 0),
+    }
+    if metric_goal == "maximize":
+        normalized["borderline_gap"] = normalized["borderline_gap"] if normalized["borderline_gap"] is not None else defaults["borderline_gap"]
+        normalized["abandon_gap"] = normalized["abandon_gap"] if normalized["abandon_gap"] is not None else defaults["abandon_gap"]
+    else:
+        normalized["borderline_relative_gap"] = normalized["borderline_relative_gap"] if normalized["borderline_relative_gap"] is not None else defaults["borderline_relative_gap"]
+        normalized["abandon_relative_gap"] = normalized["abandon_relative_gap"] if normalized["abandon_relative_gap"] is not None else defaults["abandon_relative_gap"]
+    return normalized
+
+
+def normalize_execution_policy(raw: Any, args: argparse.Namespace) -> Dict[str, Any]:
+    policy = dict(DEFAULT_EXECUTION_POLICY)
+    if isinstance(raw, dict):
+        policy.update(raw)
+    if args.run_selected_variants:
+        policy["run_selected_variants"] = True
+    if args.max_executed_variants is not None:
+        policy["max_executed_variants"] = int(args.max_executed_variants)
+    if args.variant_timeout is not None:
+        policy["variant_timeout"] = int(args.variant_timeout)
+    max_executed_variants = policy.get("max_executed_variants")
+    variant_timeout = policy.get("variant_timeout")
+    full_run_timeout = policy.get("full_run_timeout")
+    return {
+        "run_selected_variants": bool(policy.get("run_selected_variants", False)),
+        "max_executed_variants": int(max_executed_variants) if max_executed_variants is not None else 1,
+        "variant_timeout": int(variant_timeout) if variant_timeout is not None else 60,
+        "run_full_after_short_run": bool(policy.get("run_full_after_short_run", False)),
+        "full_run_timeout": (
+            int(full_run_timeout)
+            if full_run_timeout is not None
+            else int(variant_timeout)
+            if variant_timeout is not None
+            else 60
+        ),
+    }
+
+
+def synthesize_candidate_idea(variant_spec: Dict[str, Any]) -> Dict[str, Any]:
+    axes = list(sorted((variant_spec.get("variant_axes") or {}).keys()))
+    summary = (
+        f"Evaluate controlled variation across: {', '.join(axes)}."
+        if axes
+        else "Evaluate one controlled follow-up on top of the current research baseline."
+    )
+    return {
+        "id": "idea-001",
+        "summary": summary,
+        "change_scope": axes[0] if axes else "single-variable-followup",
+        "target_component": axes[0] if axes else "training-config",
+        "expected_upside": 0.7,
+        "implementation_risk": 0.35,
+        "eval_risk": 0.2,
+        "rollback_ease": 0.9,
+        "estimated_runtime_cost": 0.45,
+        "single_variable_fit": 0.9,
+        "hypothesis": summary,
+        "supporting_changes": ["Keep all non-target changes mechanical and reversible."],
+    }
+
+
+def normalize_candidate_ideas(raw: Any, variant_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not isinstance(raw, list) or not raw:
+        return [synthesize_candidate_idea(variant_spec)]
+
+    normalized: List[Dict[str, Any]] = []
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "id": str(item.get("id") or f"idea-{index:03d}"),
+                "summary": str(item.get("summary") or item.get("description") or f"Candidate idea {index}"),
+                "change_scope": str(item.get("change_scope") or "unspecified"),
+                "target_component": str(item.get("target_component") or "unspecified"),
+                "expected_upside": clamp_score(safe_float(item.get("expected_upside")), default=0.5),
+                "implementation_risk": clamp_score(safe_float(item.get("implementation_risk")), default=0.5),
+                "eval_risk": clamp_score(safe_float(item.get("eval_risk")), default=0.5),
+                "rollback_ease": clamp_score(safe_float(item.get("rollback_ease")), default=0.5),
+                "estimated_runtime_cost": clamp_score(safe_float(item.get("estimated_runtime_cost")), default=0.5),
+                "single_variable_fit": clamp_score(safe_float(item.get("single_variable_fit")), default=0.8),
+                "hypothesis": str(item.get("hypothesis") or item.get("summary") or ""),
+                "supporting_changes": list(item.get("supporting_changes", []) or []),
+            }
+        )
+    return normalized or [synthesize_candidate_idea(variant_spec)]
+
+
+def normalize_campaign(args: argparse.Namespace) -> Tuple[Dict[str, Any], bool]:
+    if args.research_campaign_json:
+        raw_campaign = load_structured_file(Path(args.research_campaign_json).resolve())
+        compatibility_mode = False
+    else:
+        raw_campaign = {}
+        compatibility_mode = True
+
+    current_research = str(raw_campaign.get("current_research") or args.current_research or "").strip()
+    if not current_research:
+        raise ValueError("Either --current-research or --research-campaign-json with current_research is required.")
+
+    if args.variant_spec_json:
+        variant_spec = load_variant_spec(Path(args.variant_spec_json).resolve(), current_research)
+    else:
+        variant_spec = normalize_variant_spec(
+            raw_campaign.get("variant_spec", {}) if isinstance(raw_campaign.get("variant_spec"), dict) else {},
+            current_research,
+        )
+
+    evaluation_source = normalize_evaluation_source(raw_campaign.get("evaluation_source", {}), variant_spec)
+    metric_goal = normalize_metric_goal(evaluation_source.get("metric_goal") or variant_spec.get("metric_goal"))
+    candidate_ideas = normalize_candidate_ideas(raw_campaign.get("candidate_ideas", []), variant_spec)
+    execution_policy = normalize_execution_policy(raw_campaign.get("execution_policy", {}), args)
+    sota_reference = normalize_sota_reference(raw_campaign.get("sota_reference", []), evaluation_source.get("primary_metric"), metric_goal)
+
+    campaign = {
+        "schema_version": "1.0",
+        "mode": "legacy" if compatibility_mode else "campaign",
+        "current_research": current_research,
+        "task_family": normalize_task_family(raw_campaign.get("task_family")),
+        "dataset": raw_campaign.get("dataset"),
+        "benchmark": raw_campaign.get("benchmark"),
+        "evaluation_source": evaluation_source,
+        "sota_reference": sota_reference,
+        "candidate_ideas": candidate_ideas,
+        "compute_budget": normalize_compute_budget(raw_campaign.get("compute_budget", {})),
+        "variant_spec": variant_spec,
+        "baseline_gate": normalize_baseline_gate(raw_campaign.get("baseline_gate", {}), metric_goal),
+        "execution_policy": execution_policy,
+    }
+    return campaign, compatibility_mode
 
 
 def build_stage_trace_entry(stage: str, tool: str, summary: str, status: str = "completed") -> Dict[str, Any]:
-    return {
-        "stage": stage,
-        "tool": tool,
-        "status": status,
-        "summary": summary,
-    }
+    return {"stage": stage, "tool": tool, "status": status, "summary": summary}
 
 
 def normalize_flag_name(key: str) -> str:
@@ -294,44 +524,34 @@ def summarize_variant_result(result: Dict[str, Any]) -> str:
     return f"status={result.get('status', 'unknown')}, stop={result.get('stop_reason', 'unknown')}"
 
 
-def infer_execution_kind(base_command: str, spec: Dict[str, Any]) -> str:
-    explicit = str(spec.get("execution_kind") or "").strip().lower()
+def infer_execution_kind(base_command: Optional[str], spec_or_source: Dict[str, Any]) -> str:
+    explicit = str(spec_or_source.get("execution_kind") or "").strip().lower()
     if explicit in {"train", "training"}:
         return "training"
     if explicit in {"run", "verify", "eval", "inference", "non_training", "non-training"}:
         return "non_training"
 
-    lowered = base_command.lower()
+    lowered = str(base_command or "").lower()
     if any(token in lowered for token in [" train", "trainer", "fit", "fine-tune", "finetune"]):
         return "training"
     return "non_training"
 
 
-def normalize_metric_goal(value: Any) -> str:
-    text = str(value or "maximize").strip().lower()
-    if text in {"min", "minimize", "lower", "lower_is_better"}:
-        return "minimize"
-    return "maximize"
-
-
-def safe_float(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value))
-    except ValueError:
-        return None
-
-
-def extract_metric_policy(variant_matrix: Dict[str, Any], variant_spec: Dict[str, Any]) -> Dict[str, Any]:
+def extract_metric_policy(variant_matrix: Dict[str, Any], variant_spec: Dict[str, Any], campaign: Dict[str, Any]) -> Dict[str, Any]:
     matrix_policy = dict(variant_matrix.get("metric_policy", {}))
-    primary_metric = matrix_policy.get("primary_metric") or variant_spec.get("primary_metric")
-    metric_goal = normalize_metric_goal(matrix_policy.get("metric_goal") or variant_spec.get("metric_goal"))
+    evaluation_source = campaign.get("evaluation_source", {})
+    primary_metric = matrix_policy.get("primary_metric") or evaluation_source.get("primary_metric") or variant_spec.get("primary_metric")
+    metric_goal = normalize_metric_goal(
+        matrix_policy.get("metric_goal") or evaluation_source.get("metric_goal") or variant_spec.get("metric_goal")
+    )
+    return {"primary_metric": primary_metric, "metric_goal": metric_goal}
+
+
+def extract_comparison_metric_policy(campaign: Dict[str, Any], metric_policy: Dict[str, Any]) -> Dict[str, Any]:
+    evaluation_source = campaign.get("evaluation_source", {})
     return {
-        "primary_metric": primary_metric,
-        "metric_goal": metric_goal,
+        "primary_metric": evaluation_source.get("primary_metric") or metric_policy.get("primary_metric"),
+        "metric_goal": normalize_metric_goal(evaluation_source.get("metric_goal") or metric_policy.get("metric_goal")),
     }
 
 
@@ -361,15 +581,11 @@ def decorate_run_with_metric_policy(item: Dict[str, Any], metric_policy: Dict[st
     ranking_value, ranking_name, matched_primary_metric = metric_payload_for_policy(item, primary_metric)
 
     decorated = dict(item)
-    decorated["ranking_metric"] = (
-        {
-            "name": ranking_name,
-            "value": ranking_value,
-            "goal": metric_goal,
-        }
-        if ranking_name and ranking_value is not None
-        else None
-    )
+    decorated["ranking_metric"] = {
+        "name": ranking_name,
+        "value": ranking_value,
+        "goal": metric_goal,
+    } if ranking_name and ranking_value is not None else None
     decorated["ranking_metric_name"] = ranking_name
     decorated["ranking_metric_goal"] = metric_goal
     decorated["matched_primary_metric"] = matched_primary_metric if primary_metric else ranking_value is not None
@@ -379,7 +595,6 @@ def decorate_run_with_metric_policy(item: Dict[str, Any], metric_policy: Dict[st
 
 def rank_executed_runs(executed_runs: List[Dict[str, Any]], metric_policy: Dict[str, Any]) -> List[Dict[str, Any]]:
     status_rank = {"success": 3, "partial": 2, "blocked": 1, "not_run": 0}
-    primary_metric = metric_policy.get("primary_metric")
     metric_goal = normalize_metric_goal(metric_policy.get("metric_goal"))
 
     def adjust_for_goal(value: Optional[float]) -> float:
@@ -397,11 +612,49 @@ def rank_executed_runs(executed_runs: List[Dict[str, Any]], metric_policy: Dict[
         return (
             status_rank.get(item.get("status", "not_run"), 0),
             1 if item.get("matched_primary_metric") else 0,
-            adjust_for_goal(ranking_value) if primary_metric else adjust_for_goal(ranking_value),
+            adjust_for_goal(ranking_value),
             adjust_for_goal(fallback_value),
         )
 
     return sorted(decorated, key=sort_key, reverse=True)
+
+
+def build_variant_matrix(planner_script: Path, variant_spec: Dict[str, Any]) -> Dict[str, Any]:
+    if not variant_spec.get("base_command"):
+        current_research = variant_spec["current_research"]
+        return {
+            "schema_version": "1.0",
+            "current_research": current_research,
+            "baseline_ref": variant_spec.get("baseline_ref", current_research),
+            "base_command": None,
+            "raw_variant_count": 0,
+            "variant_count": 0,
+            "pruned_variant_count": 0,
+            "variant_budget": {
+                "max_variants": int(variant_spec.get("max_variants") or 0),
+                "max_short_cycle_runs": int(variant_spec.get("max_short_cycle_runs") or 0),
+            },
+            "selection_policy": {
+                "factors": ["cost", "success_rate", "expected_gain"],
+                "weights": variant_spec.get("selection_weights", {}),
+            },
+            "metric_policy": {
+                "primary_metric": variant_spec.get("primary_metric"),
+                "metric_goal": normalize_metric_goal(variant_spec.get("metric_goal")),
+            },
+            "variants": [],
+        }
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        temp_spec_path = Path(handle.name)
+        handle.write(json.dumps(variant_spec, indent=2, ensure_ascii=False))
+
+    try:
+        matrix = run_json(planner_script, ["--spec-json", str(temp_spec_path), "--json"])
+    finally:
+        if temp_spec_path.exists():
+            temp_spec_path.unlink()
+    return matrix
 
 
 def execute_variant_candidates(
@@ -421,7 +674,7 @@ def execute_variant_candidates(
         return [], []
 
     execution_kind = infer_execution_kind(base_command, variant_spec)
-    metric_policy = extract_metric_policy(variant_matrix, variant_spec)
+    metric_policy = extract_metric_policy(variant_matrix, variant_spec, {"evaluation_source": {}})
     executed_runs: List[Dict[str, Any]] = []
     stage_trace: List[Dict[str, Any]] = []
     for variant in variants[:max_executed_variants]:
@@ -494,60 +747,425 @@ def execute_variant_candidates(
     return rank_executed_runs(executed_runs, metric_policy), stage_trace
 
 
-def build_candidate_hypotheses(spec: Dict[str, Any], analysis_data: Dict[str, Any], code_plan: Dict[str, Any]) -> List[str]:
+def build_analysis_context(campaign: Dict[str, Any], metric_policy: Dict[str, Any], current_research: str) -> Dict[str, Any]:
+    evaluation_source = dict(campaign.get("evaluation_source", {}))
+    if metric_policy.get("primary_metric") and not evaluation_source.get("primary_metric"):
+        evaluation_source["primary_metric"] = metric_policy["primary_metric"]
+    if metric_policy.get("metric_goal") and not evaluation_source.get("metric_goal"):
+        evaluation_source["metric_goal"] = metric_policy["metric_goal"]
+    return {
+        "current_research": current_research,
+        "task_family": campaign.get("task_family"),
+        "dataset": campaign.get("dataset"),
+        "benchmark": campaign.get("benchmark"),
+        "evaluation_source": evaluation_source,
+    }
+
+
+def run_analysis_pass(
+    analysis_script: Path,
+    workspace_repo_path: Path,
+    analysis_output_dir: Path,
+    analysis_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        context_path = Path(handle.name)
+        handle.write(json.dumps(analysis_context, indent=2, ensure_ascii=False))
+
+    try:
+        return run_json(
+            analysis_script,
+            [
+                "--repo",
+                str(workspace_repo_path),
+                "--output-dir",
+                str(analysis_output_dir),
+                "--analysis-context-json",
+                str(context_path),
+            ],
+        )
+    finally:
+        if context_path.exists():
+            context_path.unlink()
+
+
+def best_sota_reference(sota_reference: Sequence[Dict[str, Any]], metric_policy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    primary_metric = metric_policy.get("primary_metric")
+    metric_goal = normalize_metric_goal(metric_policy.get("metric_goal"))
+    candidates = [
+        item
+        for item in sota_reference
+        if safe_float(item.get("value")) is not None and (not primary_metric or item.get("metric") in {primary_metric, "", None})
+    ]
+    if not candidates:
+        return None
+    reverse = metric_goal == "maximize"
+    return sorted(candidates, key=lambda item: safe_float(item.get("value")) or 0.0, reverse=reverse)[0]
+
+
+def run_baseline_evaluation(
+    *,
+    train_execute_script: Path,
+    run_execute_script: Path,
+    repo_path: Path,
+    current_research: str,
+    evaluation_source: Dict[str, Any],
+    baseline_gate_cfg: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, Any], float]:
+    command = str(evaluation_source.get("command") or "").strip()
+    if not command:
+        return (
+            {
+                "decision": "not-applicable",
+                "reason": "No evaluation command was provided in evaluation_source.",
+                "metric_name": evaluation_source.get("primary_metric"),
+                "metric_value": None,
+                "runtime_seconds": 0.0,
+            },
+            {},
+            0.0,
+        )
+
+    execution_kind = infer_execution_kind(command, evaluation_source)
+    start = time.perf_counter()
+    if execution_kind == "training":
+        max_steps = int(baseline_gate_cfg.get("max_steps") or 0)
+        run_mode = "short_run_verification" if max_steps > 0 else "startup_verification"
+        payload = run_json(
+            train_execute_script,
+            [
+                "--repo",
+                str(repo_path),
+                "--command",
+                command,
+                "--timeout",
+                str(int(baseline_gate_cfg.get("timeout") or 60)),
+                "--lane",
+                "explore",
+                "--run-mode",
+                run_mode,
+                "--dataset",
+                str(evaluation_source.get("split") or "baseline"),
+                "--checkpoint-source",
+                current_research,
+                "--max-steps",
+                str(max_steps),
+            ],
+        )
+    else:
+        payload = run_json(
+            run_execute_script,
+            [
+                "--repo",
+                str(repo_path),
+                "--command",
+                command,
+                "--timeout",
+                str(int(baseline_gate_cfg.get("timeout") or 60)),
+            ],
+        )
+        payload.setdefault("stop_reason", "command_completed" if payload.get("status") == "success" else "command_checked")
+    runtime_seconds = round(time.perf_counter() - start, 3)
+
+    primary_metric = evaluation_source.get("primary_metric")
+    metric_value, metric_name, matched_primary = metric_payload_for_policy(payload, primary_metric)
+    baseline_metric_name = metric_name or primary_metric
+    baseline_gate = {
+        "decision": "not-applicable",
+        "reason": "Evaluation ran, but no comparable SOTA reference was available.",
+        "metric_name": baseline_metric_name,
+        "metric_value": metric_value,
+        "matched_primary_metric": matched_primary,
+        "status": payload.get("status", "unknown"),
+        "stop_reason": payload.get("stop_reason", "unknown"),
+        "runtime_seconds": runtime_seconds,
+        "execution_kind": execution_kind,
+    }
+    return baseline_gate, payload, runtime_seconds
+
+
+def compare_baseline_to_sota(
+    baseline_gate: Dict[str, Any],
+    baseline_payload: Dict[str, Any],
+    metric_policy: Dict[str, Any],
+    sota_reference: Sequence[Dict[str, Any]],
+    baseline_gate_cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    baseline_value = safe_float(baseline_gate.get("metric_value"))
+    metric_name = baseline_gate.get("metric_name") or metric_policy.get("primary_metric")
+    if baseline_value is None or not metric_name:
+        baseline_gate["decision"] = "not-applicable"
+        baseline_gate["reason"] = "Baseline evaluation did not produce the primary metric."
+        return baseline_gate
+
+    reference = best_sota_reference(sota_reference, metric_policy)
+    if not reference:
+        baseline_gate["decision"] = "not-applicable"
+        baseline_gate["reason"] = "No comparable SOTA reference was provided."
+        return baseline_gate
+
+    metric_goal = normalize_metric_goal(metric_policy.get("metric_goal"))
+    sota_value = float(reference["value"])
+    baseline_gate["reference"] = reference
+    if metric_goal == "maximize":
+        gap = round(sota_value - baseline_value, 4)
+        baseline_gate["gap_to_sota"] = gap
+        if gap > float(baseline_gate_cfg["abandon_gap"]):
+            baseline_gate["decision"] = "abandon"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` trails provided SOTA `{sota_value}` by `{gap}` absolute points."
+        elif gap > float(baseline_gate_cfg["borderline_gap"]):
+            baseline_gate["decision"] = "borderline"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` is within a plausible improvement range but still `{gap}` points off the provided SOTA."
+        else:
+            baseline_gate["decision"] = "proceed"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` is close enough to the provided SOTA `{sota_value}` to justify follow-up work."
+    else:
+        relative_gap = 0.0 if sota_value == 0 else round(max(0.0, (baseline_value - sota_value) / abs(sota_value)), 4)
+        baseline_gate["relative_gap_to_sota"] = relative_gap
+        if relative_gap > float(baseline_gate_cfg["abandon_relative_gap"]):
+            baseline_gate["decision"] = "abandon"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` is worse than the provided SOTA `{sota_value}` by `{relative_gap:.2%}`."
+        elif relative_gap > float(baseline_gate_cfg["borderline_relative_gap"]):
+            baseline_gate["decision"] = "borderline"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` is close enough to the provided SOTA `{sota_value}` to review manually before scaling."
+        else:
+            baseline_gate["decision"] = "proceed"
+            baseline_gate["reason"] = f"Baseline `{metric_name}={baseline_value}` is close enough to the provided SOTA `{sota_value}` to justify follow-up work."
+    baseline_gate["observed_metrics"] = baseline_payload.get("observed_metrics", {})
+    baseline_gate["best_metric"] = baseline_payload.get("best_metric")
+    baseline_gate["best_checkpoint"] = baseline_payload.get("best_checkpoint")
+    return baseline_gate
+
+
+def score_candidate_idea(idea: Dict[str, Any]) -> float:
+    score = (
+        0.40 * clamp_score(safe_float(idea.get("expected_upside")), default=0.5)
+        + 0.20 * clamp_score(safe_float(idea.get("single_variable_fit")), default=0.8)
+        + 0.15 * clamp_score(safe_float(idea.get("rollback_ease")), default=0.5)
+        - 0.10 * clamp_score(safe_float(idea.get("implementation_risk")), default=0.5)
+        - 0.10 * clamp_score(safe_float(idea.get("eval_risk")), default=0.5)
+        - 0.05 * clamp_score(safe_float(idea.get("estimated_runtime_cost")), default=0.5)
+    )
+    return round(score, 4)
+
+
+def build_idea_gate(candidate_ideas: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    ranked = [dict(item, idea_score=score_candidate_idea(item)) for item in candidate_ideas]
+    ranked.sort(
+        key=lambda item: (
+            -item["idea_score"],
+            -item.get("expected_upside", 0.0),
+            item.get("implementation_risk", 1.0),
+            item.get("estimated_runtime_cost", 1.0),
+            item.get("id", ""),
+        )
+    )
+    top_diff = None
+    if len(ranked) >= 2:
+        top_diff = round(ranked[0]["idea_score"] - ranked[1]["idea_score"], 4)
+    return {
+        "decision": "selected" if ranked else "not-configured",
+        "ranked_ideas": ranked,
+        "selected_idea": ranked[0] if ranked else None,
+        "top_idea_score_diff": top_diff,
+    }
+
+
+def human_checkpoint_state(
+    *,
+    compatibility_mode: bool,
+    eval_contract_complete: bool,
+    baseline_gate: Dict[str, Any],
+    idea_gate: Dict[str, Any],
+) -> Tuple[str, List[str]]:
+    if compatibility_mode:
+        return "not-required", []
+
+    reasons: List[str] = []
+    if not eval_contract_complete:
+        reasons.append("eval-contract-incomplete")
+    if baseline_gate.get("decision") == "borderline":
+        reasons.append("baseline-borderline")
+    top_diff = safe_float(idea_gate.get("top_idea_score_diff"))
+    if top_diff is not None and top_diff < 0.05:
+        reasons.append("idea-selection-confirmation-required")
+    if not reasons:
+        return "not-required", []
+    if len(reasons) == 1:
+        return reasons[0], reasons
+    return "multiple-reasons", reasons
+
+
+def build_config_diff_summary(selected_idea: Optional[Dict[str, Any]], variant_matrix: Dict[str, Any]) -> List[str]:
+    lines: List[str] = []
+    if selected_idea:
+        lines.append(f"Primary change scope: `{selected_idea.get('change_scope', 'unspecified')}`.")
+    if variant_matrix.get("variants"):
+        variant = variant_matrix["variants"][0]
+        for key, value in sorted(variant.get("axes", {}).items()):
+            lines.append(f"Set `{key}` to `{value}` for the leading short-run candidate.")
+        if variant.get("subset_size") is not None:
+            lines.append(f"Use subset size `{variant['subset_size']}` during the short-run gate.")
+        if variant.get("short_run_steps") is not None:
+            lines.append(f"Cap short-run execution at `{variant['short_run_steps']}` steps.")
+    if not lines:
+        lines.append("No config overrides were derived from the current campaign.")
+    return lines
+
+
+def build_experiment_manifest(
+    *,
+    current_research: str,
+    selected_idea: Optional[Dict[str, Any]],
+    code_plan: Dict[str, Any],
+    campaign: Dict[str, Any],
+    metric_policy: Dict[str, Any],
+    analysis_output_dir: Path,
+    variant_matrix: Dict[str, Any],
+) -> Dict[str, Any]:
+    idea = selected_idea or synthesize_candidate_idea(campaign["variant_spec"])
+    return {
+        "parent_baseline": current_research,
+        "idea_id": idea.get("id"),
+        "hypothesis": idea.get("hypothesis") or idea.get("summary"),
+        "changed_files": code_plan.get("candidate_edit_targets", [])[:3],
+        "config_overrides": variant_matrix.get("variants", [{}])[0].get("axes", {}) if variant_matrix.get("variants") else {},
+        "dataset": campaign.get("dataset"),
+        "eval_contract_ref": str((analysis_output_dir / "EVAL_CONTRACT.md").as_posix()),
+        "primary_metric": metric_policy.get("primary_metric"),
+        "seed_policy": "inherit-baseline-seeds",
+        "budget": campaign.get("compute_budget", {}),
+        "promotion_rule": "Promote only if the candidate improves the primary metric and exceeds the provided SOTA reference under the frozen evaluation contract.",
+        "supporting_changes": idea.get("supporting_changes", []),
+    }
+
+
+def metric_delta_text(candidate_value: Optional[float], baseline_value: Optional[float], metric_goal: str) -> Optional[float]:
+    if candidate_value is None or baseline_value is None:
+        return None
+    return round(candidate_value - baseline_value, 4) if metric_goal == "maximize" else round(baseline_value - candidate_value, 4)
+
+
+def build_experiment_ledger(
+    *,
+    baseline_gate: Dict[str, Any],
+    executed_runs: List[Dict[str, Any]],
+    metric_policy: Dict[str, Any],
+    experiment_branch: str,
+    short_run_runtime_seconds: float,
+) -> Dict[str, Any]:
+    baseline_value = safe_float(baseline_gate.get("metric_value"))
+    ledger = {
+        "baseline": {
+            "metric_name": baseline_gate.get("metric_name"),
+            "metric_value": baseline_value,
+            "runtime_seconds": baseline_gate.get("runtime_seconds", 0.0),
+        },
+        "candidate_runs": [],
+    }
+    metric_goal = normalize_metric_goal(metric_policy.get("metric_goal"))
+    per_run_runtime = round(short_run_runtime_seconds / len(executed_runs), 3) if executed_runs else 0.0
+    for item in executed_runs:
+        ranking_metric = item.get("ranking_metric") if isinstance(item.get("ranking_metric"), dict) else {}
+        ranking_value = safe_float(ranking_metric.get("value"))
+        ledger["candidate_runs"].append(
+            {
+                "id": item.get("id"),
+                "phase": "short-run",
+                "baseline_metric_diff": metric_delta_text(ranking_value, baseline_value, metric_goal),
+                "runtime_seconds": per_run_runtime,
+                "stop_reason": item.get("stop_reason", "unknown"),
+                "rollback_target": experiment_branch,
+                "code_diff_summary": "Isolated candidate branch/worktree changes only.",
+                "config_diff_summary": item.get("axes", {}),
+            }
+        )
+    return ledger
+
+
+def short_run_gate(executed_runs: List[Dict[str, Any]], eval_contract_complete: bool, selected_idea: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not eval_contract_complete:
+        return {"status": "failed", "reason": "Evaluation contract is incomplete; stop before candidate training."}
+    if selected_idea and clamp_score(safe_float(selected_idea.get("single_variable_fit")), default=0.8) < 0.5:
+        return {"status": "failed", "reason": "Selected idea does not satisfy the single-variable requirement."}
+    if not executed_runs:
+        return {"status": "not-run", "reason": "No short-run candidates were executed."}
+    best = executed_runs[0]
+    if best.get("status") not in {"success", "partial"}:
+        return {"status": "failed", "reason": f"Best short-run candidate ended in `{best.get('status', 'unknown')}`."}
+    return {"status": "passed", "reason": f"Short-run gate passed with `{best.get('id', 'unknown')}`."}
+
+
+def eval_contract_complete(eval_contract: Dict[str, Any]) -> bool:
+    return bool(eval_contract.get("primary_metric")) and bool(eval_contract.get("evaluation_command") or eval_contract.get("evaluation_path"))
+
+
+def build_candidate_hypotheses(
+    campaign: Dict[str, Any],
+    analysis_data: Dict[str, Any],
+    code_plan: Dict[str, Any],
+    idea_gate: Dict[str, Any],
+) -> List[str]:
     hypotheses: List[str] = []
-    for axis, values in sorted(spec.get("variant_axes", {}).items()):
+    for idea in idea_gate.get("ranked_ideas", [])[:2]:
+        hypotheses.append(f"{idea['id']}: {idea['summary']}")
+    for axis, values in sorted((campaign["variant_spec"].get("variant_axes") or {}).items()):
         shown_values = ", ".join(str(value) for value in values[:3])
         hypotheses.append(f"Probe `{axis}` variation across: {shown_values}.")
-    if spec.get("base_command"):
-        hypotheses.append(f"Keep `{spec['base_command']}` as the execution anchor for candidate trials.")
+    if campaign["variant_spec"].get("base_command"):
+        hypotheses.append(f"Keep `{campaign['variant_spec']['base_command']}` as the execution anchor for candidate trials.")
     for track in code_plan.get("proposed_code_tracks", [])[:2]:
         hypotheses.append(track)
     for suggestion in analysis_data.get("conservative_suggestions", [])[:2]:
         hypotheses.append(suggestion)
     if not hypotheses:
         hypotheses.append("Start with one low-risk exploratory code change plus one short-cycle candidate run.")
-    return hypotheses[:5]
+    return hypotheses[:6]
 
 
 def build_recommended_next_trials(
+    *,
     variant_matrix: Dict[str, Any],
     metric_policy: Dict[str, Any],
     setup_plan: Dict[str, Any],
     analysis_data: Dict[str, Any],
     code_plan: Dict[str, Any],
     executed_runs: List[Dict[str, Any]],
+    baseline_gate: Dict[str, Any],
+    selected_idea: Optional[Dict[str, Any]],
+    human_checkpoint: str,
 ) -> List[str]:
     trials: List[str] = []
+    if baseline_gate.get("decision"):
+        trials.append(f"Baseline gate decision: `{baseline_gate['decision']}`.")
+    if selected_idea:
+        trials.append(f"Implement `{selected_idea['id']}` first: {selected_idea['summary']}")
     for item in executed_runs[:1]:
-        metric = item.get("best_metric")
+        metric = item.get("ranking_metric") if isinstance(item.get("ranking_metric"), dict) else item.get("best_metric")
         if metric:
-            trials.append(
-                f"Inspect `{item['id']}` further because `{metric['name']}={metric['value']}` under exploratory execution."
-            )
+            trials.append(f"Inspect `{item['id']}` further because `{metric['name']}={metric['value']}` under exploratory execution.")
         else:
             trials.append(f"Review `{item['id']}` logs before launching broader candidate runs.")
     if metric_policy.get("primary_metric"):
-        trials.append(
-            f"Rank follow-up work by `{metric_policy['primary_metric']}` ({metric_policy['metric_goal']}) before widening the search."
-        )
+        trials.append(f"Rank follow-up work by `{metric_policy['primary_metric']}` ({metric_policy['metric_goal']}) before widening the search.")
     for target in code_plan.get("candidate_edit_targets", [])[:1]:
         trials.append(f"Review `{target}` before widening exploratory code changes.")
-    for item in variant_matrix.get("variants", [])[:3]:
+    for item in variant_matrix.get("variants", [])[:2]:
         axes = ", ".join(f"{key}={value}" for key, value in sorted(item.get("axes", {}).items())) or "no axis overrides"
         subset = item.get("subset_size") if item.get("subset_size") is not None else "full-data"
         steps = item.get("short_run_steps") if item.get("short_run_steps") is not None else "documented schedule"
         trials.append(f"Run `{item['id']}` with {axes}, subset={subset}, steps={steps}.")
     for item in setup_plan.get("unresolved_setup_risks", [])[:1]:
         trials.append(f"Resolve setup risk before scaling out: {item}")
-    for item in analysis_data.get("conservative_suggestions", [])[:1]:
-        trials.append(item)
+    if human_checkpoint != "not-required":
+        trials.append(f"Pause for user confirmation before broader training: `{human_checkpoint}`.")
     if not trials:
         trials.append("Confirm one isolated candidate branch and run one short-cycle check before broader exploration.")
-    return trials[:5]
+    return trials[:6]
 
 
 def build_changes_summary(
+    *,
     context_id: str,
     current_research: str,
     experiment_branch: str,
@@ -559,6 +1177,8 @@ def build_changes_summary(
     metric_policy: Dict[str, Any],
     include_analysis_pass: bool,
     include_setup_pass: bool,
+    baseline_gate: Dict[str, Any],
+    selected_idea: Optional[Dict[str, Any]],
 ) -> List[str]:
     summary = [
         f"Context id: `{context_id}`.",
@@ -572,28 +1192,27 @@ def build_changes_summary(
         summary.append("Included a read-only analysis pass before wider exploratory edits.")
     if include_setup_pass:
         summary.append("Included a setup planning pass to preserve environment and asset assumptions.")
+    if baseline_gate.get("decision"):
+        summary.append(f"Baseline gate result: `{baseline_gate['decision']}`.")
+    if selected_idea:
+        summary.append(f"Selected `{selected_idea['id']}` as the current single-variable idea.")
     for track in code_plan.get("proposed_code_tracks", [])[:2]:
         summary.append(track)
     if variant_matrix.get("variant_count"):
         summary.append(f"Prepared `{variant_matrix['variant_count']}` exploratory run candidates from the variant matrix.")
     if variant_matrix.get("pruned_variant_count"):
-        summary.append(
-            f"Pruned `{variant_matrix['pruned_variant_count']}` higher-cost candidates under the explore-run budget policy."
-        )
+        summary.append(f"Pruned `{variant_matrix['pruned_variant_count']}` higher-cost candidates under the explore-run budget policy.")
     if variant_matrix.get("selection_policy", {}).get("factors"):
-        summary.append(
-            "Pre-execution candidate selection used `cost`, `success_rate`, and `expected_gain` as the primary factors."
-        )
+        summary.append("Pre-execution candidate selection used `cost`, `success_rate`, and `expected_gain` as the primary factors.")
     if metric_policy.get("primary_metric"):
-        summary.append(
-            f"Configured candidate ranking around `{metric_policy['primary_metric']}` with goal `{metric_policy['metric_goal']}`."
-        )
+        summary.append(f"Configured candidate ranking around `{metric_policy['primary_metric']}` with goal `{metric_policy['metric_goal']}`.")
     if executed_runs:
         summary.append(f"Executed `{len(executed_runs)}` exploratory candidate runs through controlled helper handoff.")
     return summary
 
 
 def build_execution_notes(
+    *,
     workspace_info: Dict[str, Any],
     scan_data: Dict[str, Any],
     setup_plan: Dict[str, Any],
@@ -602,11 +1221,11 @@ def build_execution_notes(
     variant_matrix: Dict[str, Any],
     metric_policy: Dict[str, Any],
     executed_runs: List[Dict[str, Any]],
+    baseline_gate: Dict[str, Any],
+    human_checkpoint: str,
 ) -> List[str]:
     notes: List[str] = []
-    notes.append(
-        f"Workspace mode: `{workspace_info['mode']}` on branch `{workspace_info['branch']}` (current branch before orchestration: `{workspace_info['current_branch']}`)."
-    )
+    notes.append(f"Workspace mode: `{workspace_info['mode']}` on branch `{workspace_info['branch']}` (current branch before orchestration: `{workspace_info['current_branch']}`).")
     if scan_data.get("readme_path"):
         notes.append(f"Repository README: `{scan_data['readme_path']}`.")
     if setup_plan.get("environment_file"):
@@ -619,29 +1238,76 @@ def build_execution_notes(
     suspicious = analysis_data.get("suspicious_patterns", [])
     if suspicious:
         notes.append(f"Analysis surfaced `{len(suspicious)}` suspicious pattern hints for review before heavier exploration.")
+    if baseline_gate.get("decision"):
+        notes.append(f"Baseline gate decision: `{baseline_gate['decision']}`.")
     if variant_matrix.get("variant_count"):
         notes.append("Prefer short-cycle candidate ranking before widening exploratory runs.")
     if variant_matrix.get("variant_budget", {}).get("max_variants"):
-        notes.append(
-            f"Variant budget capped selection at `{variant_matrix['variant_budget']['max_variants']}` candidates."
-        )
+        notes.append(f"Variant budget capped selection at `{variant_matrix['variant_budget']['max_variants']}` candidates.")
     if variant_matrix.get("variant_budget", {}).get("max_short_cycle_runs"):
-        notes.append(
-            f"Short-cycle runs were capped at `{variant_matrix['variant_budget']['max_short_cycle_runs']}` candidates."
-        )
+        notes.append(f"Short-cycle runs were capped at `{variant_matrix['variant_budget']['max_short_cycle_runs']}` candidates.")
     if metric_policy.get("primary_metric"):
-        notes.append(
-            f"Executed runs are ranked by `{metric_policy['primary_metric']}` with goal `{metric_policy['metric_goal']}`."
-        )
+        notes.append(f"Executed runs are ranked by `{metric_policy['primary_metric']}` with goal `{metric_policy['metric_goal']}`.")
     if executed_runs:
         notes.append(f"Executed `{len(executed_runs)}` candidate variants and fed their results back into `best_runs`.")
+    if human_checkpoint != "not-required":
+        notes.append(f"Human checkpoint required before broader training: `{human_checkpoint}`.")
     return notes
+
+
+def eval_contract_payload(analysis_data: Dict[str, Any], campaign: Dict[str, Any], metric_policy: Dict[str, Any]) -> Dict[str, Any]:
+    contract = dict(analysis_data.get("eval_contract", {}))
+    if not contract:
+        evaluation_source = campaign.get("evaluation_source", {})
+        contract = {
+            "task_family": campaign.get("task_family"),
+            "dataset": campaign.get("dataset"),
+            "benchmark": campaign.get("benchmark"),
+            "evaluation_command": evaluation_source.get("command"),
+            "evaluation_path": evaluation_source.get("path"),
+            "primary_metric": evaluation_source.get("primary_metric") or metric_policy.get("primary_metric"),
+            "metric_goal": evaluation_source.get("metric_goal") or metric_policy.get("metric_goal"),
+            "expected_artifacts": evaluation_source.get("artifacts", []),
+            "notes": evaluation_source.get("notes", []),
+        }
+    if not contract.get("primary_metric") and metric_policy.get("primary_metric"):
+        contract["primary_metric"] = metric_policy["primary_metric"]
+    if not contract.get("metric_goal") and metric_policy.get("metric_goal"):
+        contract["metric_goal"] = metric_policy["metric_goal"]
+    return contract
+
+
+def compute_sota_claim_state(
+    *,
+    executed_runs: List[Dict[str, Any]],
+    metric_policy: Dict[str, Any],
+    sota_reference: Sequence[Dict[str, Any]],
+) -> str:
+    reference = best_sota_reference(sota_reference, metric_policy)
+    if not executed_runs or not reference:
+        return "not-applicable"
+    ranked_runs = rank_executed_runs(executed_runs, metric_policy)
+    ranking_metric = ranked_runs[0].get("ranking_metric") if isinstance(ranked_runs[0].get("ranking_metric"), dict) else None
+    if not ranking_metric:
+        return "not-applicable"
+    candidate_value = safe_float(ranking_metric.get("value"))
+    reference_value = safe_float(reference.get("value"))
+    if candidate_value is None or reference_value is None:
+        return "not-applicable"
+    metric_goal = normalize_metric_goal(metric_policy.get("metric_goal"))
+    if metric_goal == "maximize" and candidate_value > reference_value:
+        return "candidate-exceeds-provided-sota"
+    if metric_goal == "minimize" and candidate_value < reference_value:
+        return "candidate-exceeds-provided-sota"
+    return "not-applicable"
 
 
 def build_context(
     *,
     repo_path: Path,
+    analysis_output_dir: Path,
     context_id: str,
+    campaign: Dict[str, Any],
     current_research: str,
     experiment_branch: str,
     durable_current_research: Dict[str, Any],
@@ -651,14 +1317,22 @@ def build_context(
     analysis_data: Dict[str, Any],
     code_plan: Dict[str, Any],
     variant_matrix: Dict[str, Any],
-    variant_spec: Dict[str, Any],
+    metric_policy: Dict[str, Any],
     executed_runs: List[Dict[str, Any]],
     planned_skill_chain: List[str],
     helper_stage_trace: List[Dict[str, Any]],
     include_analysis_pass: bool,
     include_setup_pass: bool,
+    baseline_gate: Dict[str, Any],
+    idea_gate: Dict[str, Any],
+    selected_idea: Optional[Dict[str, Any]],
+    experiment_manifest: Dict[str, Any],
+    experiment_ledger: Dict[str, Any],
+    short_run_gate_payload: Dict[str, Any],
+    config_diff_summary: List[str],
+    human_checkpoint: str,
+    human_checkpoint_reasons: List[str],
 ) -> Dict[str, Any]:
-    metric_policy = extract_metric_policy(variant_matrix, variant_spec)
     explore_context = {
         "context_id": context_id,
         "current_research": current_research,
@@ -668,6 +1342,8 @@ def build_context(
         "workspace_mode": workspace_info.get("mode", "branch"),
         "workspace_root": workspace_info.get("workspace_root"),
     }
+    eval_contract = eval_contract_payload(analysis_data, campaign, metric_policy)
+    comparison_metric_policy = extract_comparison_metric_policy(campaign, metric_policy)
     return {
         "schema_version": "1.0",
         "context_id": context_id,
@@ -680,62 +1356,80 @@ def build_context(
         "workspace_mode": explore_context["workspace_mode"],
         "workspace_root": explore_context["workspace_root"],
         "durable_current_research": durable_current_research,
-        "source_repo_refs": code_plan.get("source_repo_refs")
-        or [
-            {
-                "repo": repo_path.name,
-                "ref": current_research,
-                "note": "current_research anchor",
-            }
-        ],
+        "campaign": campaign,
+        "eval_contract": eval_contract,
+        "analysis_output_dir": str(analysis_output_dir),
+        "source_repo_refs": code_plan.get("source_repo_refs") or [{"repo": repo_path.name, "ref": current_research, "note": "current_research anchor"}],
         "raw_variant_count": variant_matrix.get("raw_variant_count", variant_matrix.get("variant_count", 0)),
         "variant_count": variant_matrix.get("variant_count", 0),
         "pruned_variant_count": variant_matrix.get("pruned_variant_count", 0),
         "variant_budget": variant_matrix.get("variant_budget", {"max_variants": 0, "max_short_cycle_runs": 0}),
         "selection_policy": variant_matrix.get("selection_policy", {}),
         "metric_policy": metric_policy,
+        "baseline_gate": baseline_gate,
+        "idea_gate": idea_gate,
+        "selected_idea": selected_idea,
+        "experiment_manifest": experiment_manifest,
+        "experiment_ledger": experiment_ledger,
+        "short_run_gate": short_run_gate_payload,
         "best_runs": executed_runs,
         "candidate_edit_targets": code_plan.get("candidate_edit_targets", []),
         "code_tracks": code_plan.get("proposed_code_tracks", []),
-        "candidate_hypotheses": build_candidate_hypotheses(variant_spec, analysis_data, code_plan),
+        "config_diff_summary": config_diff_summary,
+        "candidate_hypotheses": build_candidate_hypotheses(campaign, analysis_data, code_plan, idea_gate),
         "planned_skill_chain": planned_skill_chain,
         "helper_stage_trace": helper_stage_trace,
         "recommended_next_trials": build_recommended_next_trials(
-            variant_matrix,
-            metric_policy,
-            setup_plan,
-            analysis_data,
-            code_plan,
-            executed_runs,
+            variant_matrix=variant_matrix,
+            metric_policy=metric_policy,
+            setup_plan=setup_plan,
+            analysis_data=analysis_data,
+            code_plan=code_plan,
+            executed_runs=executed_runs,
+            baseline_gate=baseline_gate,
+            selected_idea=selected_idea,
+            human_checkpoint=human_checkpoint,
         ),
         "trusted_promote_candidate": False,
         "explicit_explore_authorization": True,
+        "human_checkpoint_state": human_checkpoint,
+        "human_checkpoint_reasons": human_checkpoint_reasons,
+        "sota_claim_state": compute_sota_claim_state(
+            executed_runs=executed_runs,
+            metric_policy=comparison_metric_policy,
+            sota_reference=campaign.get("sota_reference", []),
+        ),
         "changes_summary": build_changes_summary(
-            context_id,
-            current_research,
-            experiment_branch,
-            workspace_info,
-            code_plan,
-            executed_runs,
-            planned_skill_chain,
-            variant_matrix,
-            metric_policy,
-            include_analysis_pass,
-            include_setup_pass,
+            context_id=context_id,
+            current_research=current_research,
+            experiment_branch=experiment_branch,
+            workspace_info=workspace_info,
+            code_plan=code_plan,
+            executed_runs=executed_runs,
+            planned_skill_chain=planned_skill_chain,
+            variant_matrix=variant_matrix,
+            metric_policy=metric_policy,
+            include_analysis_pass=include_analysis_pass,
+            include_setup_pass=include_setup_pass,
+            baseline_gate=baseline_gate,
+            selected_idea=selected_idea,
         ),
         "execution_notes": build_execution_notes(
-            workspace_info,
-            scan_data,
-            setup_plan,
-            analysis_data,
-            code_plan,
-            variant_matrix,
-            metric_policy,
-            executed_runs,
+            workspace_info=workspace_info,
+            scan_data=scan_data,
+            setup_plan=setup_plan,
+            analysis_data=analysis_data,
+            code_plan=code_plan,
+            variant_matrix=variant_matrix,
+            metric_policy=metric_policy,
+            executed_runs=executed_runs,
+            baseline_gate=baseline_gate,
+            human_checkpoint=human_checkpoint,
         ),
         "notes": [
             "Exploratory result only; do not present this as trusted reproduction success.",
             "`current_research` should map to a durable branch, commit, checkpoint, run record, or trained model state.",
+            "Provided SOTA references are treated as the frozen comparison set for this campaign; the orchestrator does not prove completeness.",
         ],
     }
 
@@ -743,22 +1437,24 @@ def build_context(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Plan explicit exploratory research work on top of current_research.")
     parser.add_argument("--repo", required=True, help="Path to the target repository.")
-    parser.add_argument("--current-research", required=True, help="Durable identifier for the current research context.")
+    parser.add_argument("--current-research", default="", help="Durable identifier for the current research context.")
+    parser.add_argument("--research-campaign-json", default="", help="Optional path to a high-level research_campaign JSON or YAML file.")
     parser.add_argument("--output-dir", default="explore_outputs", help="Directory to write exploratory outputs into.")
     parser.add_argument("--experiment-branch", default="", help="Optional experiment branch or worktree label.")
     parser.add_argument("--variant-spec-json", default="", help="Optional path to a variant-spec JSON file.")
     parser.add_argument("--include-analysis-pass", action="store_true", help="Include analyze-project in the planned chain.")
     parser.add_argument("--include-setup-pass", action="store_true", help="Include env-and-assets-bootstrap in the planned chain.")
-    parser.add_argument(
-        "--run-selected-variants",
-        action="store_true",
-        help="Execute a small number of exploratory variants through the trusted execution helpers.",
-    )
-    parser.add_argument("--max-executed-variants", type=int, default=1, help="Maximum number of exploratory variants to execute when execution is enabled.")
-    parser.add_argument("--variant-timeout", type=int, default=60, help="Timeout in seconds for each executed exploratory variant.")
+    parser.add_argument("--run-selected-variants", action="store_true", help="Execute a small number of exploratory variants through the trusted execution helpers.")
+    parser.add_argument("--max-executed-variants", type=int, default=None, help="Maximum number of exploratory variants to execute when execution is enabled.")
+    parser.add_argument("--variant-timeout", type=int, default=None, help="Timeout in seconds for each executed exploratory variant.")
     args = parser.parse_args()
 
     repo_path = Path(args.repo).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    analysis_output_dir = output_dir.parent / "analysis_outputs"
+
+    campaign, compatibility_mode = normalize_campaign(args)
+    current_research = campaign["current_research"]
     base_dir = Path(__file__).resolve().parents[2]
     scan_script = base_dir / "repo-intake-and-plan" / "scripts" / "scan_repo.py"
     setup_script = base_dir / "env-and-assets-bootstrap" / "scripts" / "plan_setup.py"
@@ -769,130 +1465,140 @@ def main() -> int:
     train_execute_script = base_dir / "run-train" / "scripts" / "run_training.py"
     writer_script = Path(__file__).resolve().parent / "write_outputs.py"
 
-    durable_current_research = validate_current_research(repo_path, args.current_research)
-    experiment_branch = choose_experiment_branch(args.current_research, args.experiment_branch)
+    durable_current_research = validate_current_research(repo_path, current_research)
+    experiment_branch = choose_experiment_branch(current_research, args.experiment_branch)
     workspace_info = ensure_experiment_workspace(repo_path, experiment_branch)
-    context_id = build_context_id(args.current_research, experiment_branch)
-
-    helper_stage_trace = [
-        build_stage_trace_entry(
-            "validate-current-research",
-            "research-explore/validate_current_research",
-            f"Validated durable current research `{args.current_research}` as `{durable_current_research['kind']}`.",
-        ),
-        build_stage_trace_entry(
-            "workspace",
-            "research-explore/ensure_experiment_workspace",
-            (
-                f"{'Created' if workspace_info['created_branch'] else 'Validated'} isolated "
-                f"{workspace_info['mode']} for branch `{experiment_branch}` at `{workspace_info['workspace_root']}`."
-            ),
-        ),
-    ]
+    context_id = build_context_id(current_research, experiment_branch)
     workspace_repo_path = Path(workspace_info["workspace_root"]).resolve()
 
-    scan_data = run_json(scan_script, ["--repo", str(workspace_repo_path), "--json"])
-    helper_stage_trace.append(
-        build_stage_trace_entry(
-            "repo-scan",
-            "repo-intake-and-plan/scripts/scan_repo.py",
-            f"Scanned repository structure and README signals for `{repo_path.name}`.",
-        )
-    )
-
-    setup_plan = run_json(setup_script, ["--repo", str(workspace_repo_path), "--json"]) if args.include_setup_pass else {}
-    if args.include_setup_pass:
-        helper_stage_trace.append(
-            build_stage_trace_entry(
-                "setup-plan",
-                "env-and-assets-bootstrap/scripts/plan_setup.py",
-                "Planned environment and asset setup for exploratory execution.",
-            )
-        )
-
-    analysis_data = run_json(analysis_script, ["--repo", str(workspace_repo_path), "--json"]) if args.include_analysis_pass else {}
-    if args.include_analysis_pass:
-        helper_stage_trace.append(
-            build_stage_trace_entry(
-                "analysis-pass",
-                "analyze-project/scripts/analyze_project.py",
-                "Ran a conservative read-only analysis pass before wider exploratory edits.",
-            )
-        )
-
-    code_plan_args = [
-        "--repo",
-        str(workspace_repo_path),
-        "--current-research",
-        args.current_research,
-        "--experiment-branch",
-        experiment_branch,
-        "--json",
+    helper_stage_trace = [
+        build_stage_trace_entry("validate-current-research", "research-explore/validate_current_research", f"Validated durable current research `{current_research}` as `{durable_current_research['kind']}`."),
+        build_stage_trace_entry("workspace", "research-explore/ensure_experiment_workspace", f"{'Created' if workspace_info['created_branch'] else 'Validated'} isolated {workspace_info['mode']} for branch `{experiment_branch}` at `{workspace_info['workspace_root']}`."),
     ]
+
+    scan_data = run_json(scan_script, ["--repo", str(workspace_repo_path), "--json"])
+    helper_stage_trace.append(build_stage_trace_entry("repo-scan", "repo-intake-and-plan/scripts/scan_repo.py", f"Scanned repository structure and README signals for `{repo_path.name}`."))
+
+    include_analysis_pass = args.include_analysis_pass or not compatibility_mode
+    include_setup_pass = args.include_setup_pass or not compatibility_mode
+    setup_plan = run_json(setup_script, ["--repo", str(workspace_repo_path), "--json"]) if include_setup_pass else {}
+    if include_setup_pass:
+        helper_stage_trace.append(build_stage_trace_entry("setup-plan", "env-and-assets-bootstrap/scripts/plan_setup.py", "Planned environment and asset setup for exploratory execution."))
+
+    variant_spec = campaign["variant_spec"]
+    variant_matrix = build_variant_matrix(planner_script, variant_spec)
+    metric_policy = extract_metric_policy(variant_matrix, variant_spec, campaign)
+    comparison_metric_policy = extract_comparison_metric_policy(campaign, metric_policy)
+
+    analysis_data: Dict[str, Any] = {}
+    if include_analysis_pass:
+        analysis_context = build_analysis_context(campaign, metric_policy, current_research)
+        analysis_data = run_analysis_pass(analysis_script, workspace_repo_path, analysis_output_dir, analysis_context)
+        helper_stage_trace.append(build_stage_trace_entry("analysis-pass", "analyze-project/scripts/analyze_project.py", "Ran a task-aware read-only analysis pass and wrote analysis_outputs artifacts."))
+
+    code_plan_args = ["--repo", str(workspace_repo_path), "--current-research", current_research, "--experiment-branch", experiment_branch, "--task-family", campaign.get("task_family") or "", "--json"]
     if args.variant_spec_json:
         code_plan_args.extend(["--variant-spec-json", args.variant_spec_json])
     code_plan = run_json(code_planner_script, code_plan_args)
-    helper_stage_trace.append(
-        build_stage_trace_entry(
-            "code-plan",
-            "explore-code/scripts/plan_code_changes.py",
-            f"Prepared {len(code_plan.get('candidate_edit_targets', []))} candidate edit targets.",
+    helper_stage_trace.append(build_stage_trace_entry("code-plan", "explore-code/scripts/plan_code_changes.py", f"Prepared {len(code_plan.get('candidate_edit_targets', []))} candidate edit targets."))
+    helper_stage_trace.append(build_stage_trace_entry("run-plan", "explore-run/scripts/plan_variants.py", f"Prepared {variant_matrix.get('variant_count', 0)} exploratory run variants after pruning {variant_matrix.get('pruned_variant_count', 0)} by budget."))
+
+    eval_contract = eval_contract_payload(analysis_data, campaign, metric_policy)
+    baseline_gate: Dict[str, Any] = {"decision": "not-applicable", "reason": "Baseline gate was not evaluated."}
+    baseline_payload: Dict[str, Any] = {}
+    if not compatibility_mode:
+        baseline_gate, baseline_payload, _baseline_runtime = run_baseline_evaluation(
+            train_execute_script=train_execute_script,
+            run_execute_script=run_execute_script,
+            repo_path=workspace_repo_path,
+            current_research=current_research,
+            evaluation_source=campaign["evaluation_source"],
+            baseline_gate_cfg=campaign["baseline_gate"],
         )
+        baseline_gate = compare_baseline_to_sota(
+            baseline_gate,
+            baseline_payload,
+            comparison_metric_policy,
+            campaign.get("sota_reference", []),
+            campaign["baseline_gate"],
+        )
+        helper_stage_trace.append(build_stage_trace_entry("baseline-gate", "research-explore/run_baseline_gate", f"Baseline gate decision: `{baseline_gate.get('decision', 'not-applicable')}`."))
+
+    idea_gate = build_idea_gate(campaign["candidate_ideas"])
+    selected_idea = idea_gate.get("selected_idea")
+    helper_stage_trace.append(build_stage_trace_entry("idea-gate", "research-explore/idea_gate", f"Ranked {len(idea_gate.get('ranked_ideas', []))} candidate ideas and selected `{(selected_idea or {}).get('id', 'none')}`."))
+
+    checkpoint_state, checkpoint_reasons = human_checkpoint_state(
+        compatibility_mode=compatibility_mode,
+        eval_contract_complete=eval_contract_complete(eval_contract),
+        baseline_gate=baseline_gate,
+        idea_gate=idea_gate,
     )
 
-    variant_matrix, variant_spec = build_variant_matrix(planner_script, args.variant_spec_json, args.current_research)
-    metric_policy = extract_metric_policy(variant_matrix, variant_spec)
-    execution_kind = (
-        infer_execution_kind(variant_matrix.get("base_command"), variant_spec)
-        if variant_matrix.get("base_command")
-        else None
+    experiment_manifest = build_experiment_manifest(
+        current_research=current_research,
+        selected_idea=selected_idea,
+        code_plan=code_plan,
+        campaign=campaign,
+        metric_policy=metric_policy,
+        analysis_output_dir=analysis_output_dir,
+        variant_matrix=variant_matrix,
     )
-    helper_stage_trace.append(
-        build_stage_trace_entry(
-            "run-plan",
-            "explore-run/scripts/plan_variants.py",
-            (
-                f"Prepared {variant_matrix.get('variant_count', 0)} exploratory run variants"
-                f" after pruning {variant_matrix.get('pruned_variant_count', 0)} by budget."
-            ),
-        )
-    )
+    config_diff_summary = build_config_diff_summary(selected_idea, variant_matrix)
 
     planned_skill_chain: List[str] = []
-    if args.include_analysis_pass:
+    if include_analysis_pass:
         planned_skill_chain.append("analyze-project")
-    if args.include_setup_pass:
+    if include_setup_pass:
         planned_skill_chain.append("env-and-assets-bootstrap")
     planned_skill_chain.extend(["explore-code", "explore-run"])
+
+    execution_kind = infer_execution_kind(variant_matrix.get("base_command"), variant_spec) if variant_matrix.get("base_command") else None
     executed_runs: List[Dict[str, Any]] = []
-    if args.run_selected_variants:
+    short_run_runtime_seconds = 0.0
+    should_run_variants = bool(campaign["execution_policy"]["run_selected_variants"])
+    if not compatibility_mode and baseline_gate.get("decision") == "abandon":
+        should_run_variants = False
+    if not compatibility_mode and checkpoint_state != "not-required":
+        should_run_variants = False
+
+    if should_run_variants:
         if variant_matrix.get("base_command") and variant_matrix.get("variants"):
             planned_skill_chain.append("run-train" if execution_kind == "training" else "minimal-run-and-audit")
+        started = time.perf_counter()
         executed_runs, execution_trace = execute_variant_candidates(
             train_execute_script=train_execute_script,
             run_execute_script=run_execute_script,
             repo_path=workspace_repo_path,
             variant_matrix=variant_matrix,
             variant_spec=variant_spec,
-            current_research=args.current_research,
-            timeout=args.variant_timeout,
-            max_executed_variants=args.max_executed_variants,
+            current_research=current_research,
+            timeout=campaign["execution_policy"]["variant_timeout"],
+            max_executed_variants=campaign["execution_policy"]["max_executed_variants"],
         )
+        short_run_runtime_seconds = round(time.perf_counter() - started, 3)
         helper_stage_trace.extend(execution_trace)
 
-    output_dir = Path(args.output_dir).resolve()
-    helper_stage_trace.append(
-        build_stage_trace_entry(
-            "bundle-write",
-            "research-explore/scripts/write_outputs.py",
-            f"Writing the exploratory output bundle into `{output_dir}`.",
-        )
+    short_run_gate_payload = short_run_gate(executed_runs, eval_contract_complete(eval_contract), selected_idea)
+    helper_stage_trace.append(build_stage_trace_entry("short-run-gate", "research-explore/short_run_gate", f"Short-run gate status: `{short_run_gate_payload['status']}`."))
+    if campaign["execution_policy"].get("run_full_after_short_run"):
+        helper_stage_trace.append(build_stage_trace_entry("full-run", "research-explore/full_run_governor", "Full-run execution is configured but remains conservative; this implementation records the intent and stops after the short-run gate.", status="planned"))
+
+    experiment_ledger = build_experiment_ledger(
+        baseline_gate=baseline_gate,
+        executed_runs=executed_runs,
+        metric_policy=metric_policy,
+        experiment_branch=experiment_branch,
+        short_run_runtime_seconds=short_run_runtime_seconds,
     )
 
+    helper_stage_trace.append(build_stage_trace_entry("bundle-write", "research-explore/scripts/write_outputs.py", f"Writing the exploratory output bundle into `{output_dir}`."))
     context = build_context(
         repo_path=repo_path,
+        analysis_output_dir=analysis_output_dir,
         context_id=context_id,
-        current_research=args.current_research,
+        campaign=campaign,
+        current_research=current_research,
         experiment_branch=experiment_branch,
         durable_current_research=durable_current_research,
         workspace_info=workspace_info,
@@ -901,24 +1607,40 @@ def main() -> int:
         analysis_data=analysis_data,
         code_plan=code_plan,
         variant_matrix=variant_matrix,
-        variant_spec=variant_spec,
+        metric_policy=metric_policy,
         executed_runs=executed_runs,
         planned_skill_chain=planned_skill_chain,
         helper_stage_trace=helper_stage_trace,
-        include_analysis_pass=args.include_analysis_pass,
-        include_setup_pass=args.include_setup_pass,
+        include_analysis_pass=include_analysis_pass,
+        include_setup_pass=include_setup_pass,
+        baseline_gate=baseline_gate,
+        idea_gate=idea_gate,
+        selected_idea=selected_idea,
+        experiment_manifest=experiment_manifest,
+        experiment_ledger=experiment_ledger,
+        short_run_gate_payload=short_run_gate_payload,
+        config_diff_summary=config_diff_summary,
+        human_checkpoint=checkpoint_state,
+        human_checkpoint_reasons=checkpoint_reasons,
     )
-
     write_bundle(writer_script, output_dir, context)
 
     payload = {
         "schema_version": "1.0",
         "context_id": context_id,
         "repo": str(repo_path),
-        "current_research": args.current_research,
+        "current_research": current_research,
         "experiment_branch": experiment_branch,
         "workspace": workspace_info,
         "durable_current_research": durable_current_research,
+        "campaign": campaign,
+        "eval_contract": context["eval_contract"],
+        "baseline_gate": baseline_gate,
+        "idea_gate": idea_gate,
+        "selected_idea": selected_idea,
+        "experiment_manifest": experiment_manifest,
+        "experiment_ledger": experiment_ledger,
+        "short_run_gate": short_run_gate_payload,
         "planned_skill_chain": planned_skill_chain,
         "candidate_edit_targets": code_plan.get("candidate_edit_targets", []),
         "code_tracks": code_plan.get("proposed_code_tracks", []),
@@ -937,8 +1659,12 @@ def main() -> int:
         "setup_notes": setup_plan.get("setup_notes", []),
         "analysis_summary": analysis_data.get("summary_lines", []),
         "analysis_suspicious_patterns": analysis_data.get("suspicious_patterns", []),
+        "analysis_output_dir": str(analysis_output_dir),
         "invoked_stage_trace": helper_stage_trace,
         "base_command": variant_matrix.get("base_command"),
+        "human_checkpoint_state": checkpoint_state,
+        "human_checkpoint_reasons": checkpoint_reasons,
+        "sota_claim_state": context["sota_claim_state"],
         "output_dir": str(output_dir),
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))

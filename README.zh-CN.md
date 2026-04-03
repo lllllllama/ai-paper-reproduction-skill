@@ -53,7 +53,7 @@
 | 你的目标 | 对应 skill |
 |---|---|
 | 从 README 出发端到端复现仓库 | `ai-paper-reproduction` |
-| 基于 `current_research` 做端到端代码加运行探索 | `research-explore` |
+| 基于 `current_research` 运行第三场景 campaign：任务、评测和 SOTA 输入已冻结 | `research-explore` |
 | 不改代码、不跑重任务，只分析仓库 | `analyze-project` |
 | 规划环境、数据、checkpoint 和 cache | `env-and-assets-bootstrap` |
 | 保守执行 README 中的推理或评测命令 | `minimal-run-and-audit` |
@@ -193,7 +193,7 @@ Claude Code 可以根据 description 自动激活这些 skills，也可以直接
 | 可信 | `analyze-project` | 只读的项目分析、模型梳理和风险暴露 |
 | 可信 | `run-train` | 训练启动验证、resume 处理、有界监控和训练记录 |
 | 可信 | `safe-debug` | 先分析后修复的科研安全调试 |
-| 探索 | `research-explore` | 基于 `current_research` 的端到端探索 orchestrator |
+| 探索 | `research-explore` | 面向第三场景的 `current_research` 探索 orchestrator，带 repo understanding、idea gate 和 experiment governor |
 | 探索 | `explore-code` | 隔离分支上的探索性代码改造、迁移和拼接 |
 | 探索 | `explore-run` | 小样本 probe、短周期实验和候选结果排序 |
 | 辅助 | `repo-intake-and-plan` | README 命令提取与仓库扫描 helper |
@@ -227,16 +227,36 @@ trusted lane 中的训练默认保持保守。
 
 ### 🔬 科研探索流程
 
-当任务同时涉及探索性代码工作和探索性运行时，应使用 `research-explore`。
+`research-explore` 现在主要服务第三场景：研究者已经冻结了任务族、数据集、评测方式和提供的 SOTA 表，AI 负责基于 `current_research` 做理解、筛选、实施和受控实验。
 
 1. 确认 `current_research`
 2. 创建或保留隔离的实验分支 / worktree
-3. 只有在仓库上下文仍不清晰时才调用 `analyze-project` 或 `env-and-assets-bootstrap`
-4. 视需要协调 `explore-code` 和 `explore-run`
-5. 所有结果都保持 candidate-only
-6. 写出 `explore_outputs/`
+3. 产出 `analysis_outputs/` 下的研究理解文档
+4. 先运行 baseline gate，对齐给定评测命令和提供的 SOTA 表
+5. 再运行 idea gate，对候选方向排序
+6. 构建 single-variable experiment manifest
+7. 先做 short-run，再决定是否继续
+8. 所有结果都保持 candidate-only
+9. 写出 `explore_outputs/`
 
-explore lane 不能把结果表述成 trusted reproduction success。
+explore lane 不能把结果表述成 trusted reproduction success，也不能把用户提供的 SOTA 表自动升级成“已证明完整”的全局结论。
+
+### Campaign Inputs
+
+第三场景下推荐输入 `research_campaign.json` / `research_campaign.yaml`，而不仅是单独的 `variant_spec.json`。
+
+`research_campaign` 应冻结：
+
+- `task_family`
+- `dataset`
+- `benchmark`
+- `evaluation_source`
+- `sota_reference`
+- `candidate_ideas`
+- `compute_budget`
+- `variant_spec`
+
+参考 [skills/research-explore/references/research-campaign-spec.md](skills/research-explore/references/research-campaign-spec.md)。
 
 ### 📈 探索候选排序
 
@@ -284,9 +304,9 @@ explore lane 不能把结果表述成 trusted reproduction success。
 |---|---|
 | `repro_outputs/` | trusted 复现输出 |
 | `train_outputs/` | trusted 训练输出 |
-| `analysis_outputs/` | 只读分析输出 |
+| `analysis_outputs/` | 只读分析输出，以及 research map / change map / eval contract |
 | `debug_outputs/` | 调试诊断与修复计划 |
-| `explore_outputs/` | 探索性改动与候选运行摘要 |
+| `explore_outputs/` | 探索性改动、idea gate、experiment plan、ledger 与候选运行摘要 |
 
 ## 💬 示例提示词
 
@@ -300,6 +320,12 @@ Use ai-paper-reproduction on this AI repo. Stay README-first, prefer documented 
 
 ```text
 Use research-explore on top of current_research improved-model@branch. Work on an isolated branch, coordinate code and run exploration together, try several variants, and rank candidates in explore_outputs/.
+```
+
+**Third-scenario campaign exploration**
+
+```text
+Use research-explore with research_campaign.json. Treat the provided task family, dataset, evaluation source, and SOTA table as frozen inputs, rank the candidate ideas, keep each candidate single-variable, and write governed outputs to analysis_outputs/ and explore_outputs/.
 ```
 
 **只读分析**
@@ -354,6 +380,9 @@ python scripts/test_safe_debug_output_rendering.py
 python scripts/test_explore_output_rendering.py
 python scripts/test_explore_variant_matrix.py
 python scripts/test_research_explore_dry_run.py
+python scripts/test_research_explore_campaign_flow.py
+python scripts/test_research_explore_campaign_abandon.py
+python scripts/test_research_explore_campaign_checkpoint.py
 python scripts/test_orchestrator_dry_run.py
 python scripts/test_training_lane_routing.py
 ```

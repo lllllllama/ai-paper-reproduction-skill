@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Regression checks for campaign human-checkpoint gating."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+def write_repo(root: Path) -> None:
+    (root / "README.md").write_text("# Demo Repo\n", encoding="utf-8")
+    (root / "eval.py").write_text("print('miou: 79.4')\n", encoding="utf-8")
+    (root / "train.py").write_text("print('miou: 80.0')\n", encoding="utf-8")
+    (root / "configs").mkdir()
+    (root / "configs" / "demo.yaml").write_text("model: demo\n", encoding="utf-8")
+
+
+def init_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "codex@example.com"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Codex"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=root, check=True, capture_output=True, text=True)
+
+
+def remove_readonly(func, path, _excinfo) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    orchestrator = repo_root / "skills" / "research-explore" / "scripts" / "orchestrate_explore.py"
+
+    temp_root = Path(tempfile.mkdtemp(prefix="codex-research-campaign-checkpoint-", dir=repo_root))
+    try:
+        sample_repo = temp_root / "sample_repo"
+        sample_repo.mkdir()
+        write_repo(sample_repo)
+        init_git_repo(sample_repo)
+
+        campaign = {
+            "current_research": "seg-branch@abc1234",
+            "task_family": "segmentation",
+            "dataset": "DemoSeg",
+            "benchmark": {"name": "DemoBench", "primary_metric": "miou", "metric_goal": "maximize"},
+            "evaluation_source": {
+                "command": "python eval.py",
+                "path": "eval.py",
+                "primary_metric": "miou",
+                "metric_goal": "maximize",
+            },
+            "sota_reference": [
+                {"name": "Provided SOTA", "metric": "miou", "value": 80.0}
+            ],
+            "candidate_ideas": [
+                {
+                    "id": "idea-a",
+                    "summary": "Swap the lightweight adapter.",
+                    "change_scope": "adapter_a",
+                    "target_component": "decoder",
+                    "expected_upside": 0.72,
+                    "implementation_risk": 0.2,
+                    "eval_risk": 0.2,
+                    "rollback_ease": 0.85,
+                    "estimated_runtime_cost": 0.35,
+                    "single_variable_fit": 0.9,
+                },
+                {
+                    "id": "idea-b",
+                    "summary": "Swap a similar lightweight adapter.",
+                    "change_scope": "adapter_b",
+                    "target_component": "decoder",
+                    "expected_upside": 0.71,
+                    "implementation_risk": 0.2,
+                    "eval_risk": 0.2,
+                    "rollback_ease": 0.85,
+                    "estimated_runtime_cost": 0.35,
+                    "single_variable_fit": 0.9,
+                },
+            ],
+            "variant_spec": {
+                "current_research": "seg-branch@abc1234",
+                "base_command": "python train.py",
+                "variant_axes": {"adapter": ["a"]},
+                "primary_metric": "miou",
+                "metric_goal": "maximize",
+            },
+            "execution_policy": {
+                "run_selected_variants": True,
+                "max_executed_variants": 1,
+                "variant_timeout": 30,
+            },
+        }
+        campaign_path = temp_root / "research-campaign.json"
+        campaign_path.write_text(json.dumps(campaign, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        output_dir = temp_root / "explore_outputs"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(orchestrator),
+                "--repo",
+                str(sample_repo),
+                "--research-campaign-json",
+                str(campaign_path),
+                "--output-dir",
+                str(output_dir),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        payload = json.loads(result.stdout)
+        if payload["human_checkpoint_state"] != "idea-selection-confirmation-required":
+            raise AssertionError("research-explore did not request a checkpoint for near-tied ideas")
+        if payload["executed_variant_count"] != 0:
+            raise AssertionError("research-explore should not auto-train when an idea checkpoint is required")
+
+        print("ok: True")
+        print("checks: 2")
+        print("failures: 0")
+        return 0
+    finally:
+        if temp_root.exists():
+            shutil.rmtree(temp_root, onerror=remove_readonly)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

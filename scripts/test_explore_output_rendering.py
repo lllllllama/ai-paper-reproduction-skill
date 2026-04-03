@@ -79,6 +79,68 @@ def write_context(path: Path, mode: str) -> None:
         ],
         "trusted_promote_candidate": False,
         "explicit_explore_authorization": True,
+        "campaign": {
+            "mode": "campaign" if mode == "research" else "legacy",
+            "task_family": "segmentation",
+        },
+        "eval_contract": {
+            "task_family": "segmentation",
+            "dataset": "DemoSet",
+            "benchmark": "DemoBench",
+            "evaluation_command": "python eval.py --config configs/demo.yaml",
+            "primary_metric": "val_loss",
+            "metric_goal": "minimize",
+        },
+        "baseline_gate": {
+            "decision": "proceed",
+            "metric_name": "val_loss",
+            "metric_value": 0.9,
+        },
+        "idea_gate": {
+            "decision": "selected",
+            "ranked_ideas": [
+                {"id": "idea-001", "idea_score": 0.77, "summary": "Tune the adapter rank."}
+            ],
+        },
+        "selected_idea": {
+            "id": "idea-001",
+            "summary": "Tune the adapter rank.",
+            "target_component": "adapter",
+            "change_scope": "rank",
+        },
+        "experiment_manifest": {
+            "parent_baseline": "main@abc1234",
+            "idea_id": "idea-001",
+            "hypothesis": "Higher rank improves the exploratory validation metric.",
+            "changed_files": ["model.py", "configs/demo.yaml"],
+            "eval_contract_ref": "analysis_outputs/EVAL_CONTRACT.md",
+            "primary_metric": "val_loss",
+            "promotion_rule": "manual-review",
+            "supporting_changes": ["config plumbing"],
+        },
+        "experiment_ledger": {
+            "baseline": {
+                "metric_name": "val_loss",
+                "metric_value": 0.9,
+                "runtime_seconds": 7.0,
+            },
+            "candidate_runs": [
+                {
+                    "id": "variant-001",
+                    "phase": "short-run",
+                    "baseline_metric_diff": 0.088,
+                    "runtime_seconds": 12.0,
+                    "stop_reason": "short_run_verified",
+                    "rollback_target": "exp/lora-demo",
+                }
+            ],
+        },
+        "short_run_gate": {
+            "status": "passed",
+            "reason": "Short-run gate passed with variant-001.",
+        },
+        "human_checkpoint_state": "not-required",
+        "sota_claim_state": "candidate-exceeds-provided-sota",
         "changes_summary": [
             "Added an isolated exploratory LoRA adapter path.",
             "Kept the trusted baseline untouched.",
@@ -113,6 +175,10 @@ def main() -> int:
             changeset = (output_dir / "CHANGESET.md").read_text(encoding="utf-8")
             top_runs = (output_dir / "TOP_RUNS.md").read_text(encoding="utf-8")
             status = json.loads((output_dir / "status.json").read_text(encoding="utf-8"))
+            if mode == "research":
+                for rel in ["IDEA_GATE.md", "EXPERIMENT_PLAN.md", "EXPERIMENT_LEDGER.md"]:
+                    if not (output_dir / rel).exists():
+                        raise AssertionError(f"Missing `{rel}` for research output rendering")
 
             assert_contains(changeset, "# Explore Changeset", f"{mode}/CHANGESET.md")
             assert_contains(changeset, "exp/lora-demo", f"{mode}/CHANGESET.md")
@@ -145,9 +211,11 @@ def main() -> int:
                 raise AssertionError("explore status lost selection_policy")
             if not status["helper_stage_trace"]:
                 raise AssertionError("explore status lost helper stage trace")
+            if mode == "research" and status["sota_claim_state"] != "candidate-exceeds-provided-sota":
+                raise AssertionError("research explore status lost sota_claim_state")
 
         print("ok: True")
-        print("checks: 26")
+        print("checks: 30")
         print("failures: 0")
         return 0
     finally:

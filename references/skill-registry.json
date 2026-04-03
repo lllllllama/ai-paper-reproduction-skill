@@ -184,6 +184,7 @@
       "required_files": [
         "SKILL.md",
         "references/research-explore-policy.md",
+        "references/research-campaign-spec.md",
         "scripts/orchestrate_explore.py",
         "scripts/write_outputs.py"
       ],
@@ -192,6 +193,9 @@
         "primary_dir": "explore_outputs",
         "artifacts": [
           "CHANGESET.md",
+          "IDEA_GATE.md",
+          "EXPERIMENT_PLAN.md",
+          "EXPERIMENT_LEDGER.md",
           "TOP_RUNS.md",
           "status.json"
         ]
