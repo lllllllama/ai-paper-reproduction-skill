@@ -56,6 +56,70 @@ This repository is intended to be usable on both Windows and Linux.
 - Project-scoped paths such as `./.agents/skills` and `./tmp/codex-skills` are also valid on both platforms.
 - The repository validation and routing checks are already exercised on Windows and Linux-oriented environments through local tests and CI.
 
+## 🛠️ Install
+
+Install from a local clone into a neutral Agent Skills directory:
+
+```bash
+python scripts/install_skills.py --client agents --target "$HOME/.agents/skills" --force
+```
+
+Install into a project-scoped neutral Agent Skills directory:
+
+```bash
+python scripts/install_skills.py --client agents --target ./.agents/skills --force
+```
+
+Install with the default neutral target:
+
+```bash
+python scripts/install_skills.py --force
+```
+
+Install the full repository skill set in Codex:
+
+```bash
+npx skills add lllllllama/ai-paper-reproduction-skills --all
+```
+
+Install only the trusted reproduction orchestrator in Codex:
+
+```bash
+npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-research-reproduction
+```
+
+Install from a local clone into Codex:
+
+```bash
+python scripts/install_skills.py --client codex --target "$HOME/.codex/skills" --force
+```
+
+Install from a local clone into Claude Code:
+
+```bash
+python scripts/install_skills.py --client claude --target "$HOME/.claude/skills" --force
+```
+
+Install into a project-scoped Claude Code skills directory:
+
+```bash
+python scripts/install_skills.py --client claude --target ./.claude/skills --force
+```
+
+Claude Code can auto-invoke these skills when the descriptions match, or you can call them directly with commands such as `/ai-research-reproduction`, `/ai-research-explore`, and `/safe-debug`.
+
+PowerShell note:
+
+- In Windows PowerShell, the same commands work as written above.
+- If you prefer explicit Windows-style paths, replace `$HOME/.codex/skills` with something like `$env:USERPROFILE\\.codex\\skills`.
+
+Project-scoped Claude Code slash commands currently ship for:
+
+- `/ai-research-reproduction`
+- `/ai-research-explore`
+- `/analyze-project`
+- `/safe-debug`
+
 ## 🎯 Choose an Entry Point
 
 | If you want to... | Use |
@@ -232,70 +296,6 @@ Optional campaign blocks:
 - `feasibility_policy`
 
 See [skills/ai-research-explore/references/research-campaign-spec.md](skills/ai-research-explore/references/research-campaign-spec.md).
-
-## 🛠️ Install
-
-Install from a local clone into a neutral Agent Skills directory:
-
-```bash
-python scripts/install_skills.py --client agents --target "$HOME/.agents/skills" --force
-```
-
-Install into a project-scoped neutral Agent Skills directory:
-
-```bash
-python scripts/install_skills.py --client agents --target ./.agents/skills --force
-```
-
-Install with the default neutral target:
-
-```bash
-python scripts/install_skills.py --force
-```
-
-Install the full repository skill set in Codex:
-
-```bash
-npx skills add lllllllama/ai-paper-reproduction-skills --all
-```
-
-Install only the trusted reproduction orchestrator in Codex:
-
-```bash
-npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-research-reproduction
-```
-
-Install from a local clone into Codex:
-
-```bash
-python scripts/install_skills.py --client codex --target "$HOME/.codex/skills" --force
-```
-
-Install from a local clone into Claude Code:
-
-```bash
-python scripts/install_skills.py --client claude --target "$HOME/.claude/skills" --force
-```
-
-Install into a project-scoped Claude Code skills directory:
-
-```bash
-python scripts/install_skills.py --client claude --target ./.claude/skills --force
-```
-
-Claude Code can auto-invoke these skills when the descriptions match, or you can call them directly with commands such as `/ai-research-reproduction`, `/ai-research-explore`, and `/safe-debug`.
-
-PowerShell note:
-
-- In Windows PowerShell, the same commands work as written above.
-- If you prefer explicit Windows-style paths, replace `$HOME/.codex/skills` with something like `$env:USERPROFILE\\.codex\\skills`.
-
-Project-scoped Claude Code slash commands currently ship for:
-
-- `/ai-research-reproduction`
-- `/ai-research-explore`
-- `/analyze-project`
-- `/safe-debug`
 
 ## 💬 Example Prompts
 

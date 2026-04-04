@@ -56,6 +56,70 @@
 - 项目级路径如 `./.agents/skills`、`./tmp/codex-skills` 在 Windows 和 Linux 上都可直接使用。
 - 当前本地回归和 CI 说明也明确覆盖 Windows 与 Linux 场景。
 
+## 🛠️ 安装
+
+从本地 clone 安装到中立的 Agent Skills 目录：
+
+```bash
+python scripts/install_skills.py --client agents --target "$HOME/.agents/skills" --force
+```
+
+安装到项目内的中立 Agent Skills 目录：
+
+```bash
+python scripts/install_skills.py --client agents --target ./.agents/skills --force
+```
+
+使用默认中立安装目标：
+
+```bash
+python scripts/install_skills.py --force
+```
+
+在 Codex 中安装整套 skill：
+
+```bash
+npx skills add lllllllama/ai-paper-reproduction-skills --all
+```
+
+在 Codex 中只安装 trusted reproduction orchestrator：
+
+```bash
+npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-research-reproduction
+```
+
+从本地 clone 安装到 Codex：
+
+```bash
+python scripts/install_skills.py --client codex --target "$HOME/.codex/skills" --force
+```
+
+从本地 clone 安装到 Claude Code：
+
+```bash
+python scripts/install_skills.py --client claude --target "$HOME/.claude/skills" --force
+```
+
+安装到项目内的 Claude Code skills 目录：
+
+```bash
+python scripts/install_skills.py --client claude --target ./.claude/skills --force
+```
+
+Claude Code 可以根据描述自动调用这些 skills，也可以直接使用 `/ai-research-reproduction`、`/ai-research-explore`、`/safe-debug` 这样的命令。
+
+PowerShell 补充说明：
+
+- Windows PowerShell 下，上面的命令可以直接照抄运行。
+- 如果你更习惯显式 Windows 路径，也可以把 `$HOME/.codex/skills` 换成 `$env:USERPROFILE\\.codex\\skills` 这类写法。
+
+当前仓库提供的项目级 Claude Code slash commands：
+
+- `/ai-research-reproduction`
+- `/ai-research-explore`
+- `/analyze-project`
+- `/safe-debug`
+
 ## 🎯 入口选择
 
 | 如果你想要… | 使用 |
@@ -232,70 +296,6 @@ campaign 建议冻结：
 - `feasibility_policy`
 
 详见 [skills/ai-research-explore/references/research-campaign-spec.md](skills/ai-research-explore/references/research-campaign-spec.md)。
-
-## 🛠️ 安装
-
-从本地 clone 安装到中立的 Agent Skills 目录：
-
-```bash
-python scripts/install_skills.py --client agents --target "$HOME/.agents/skills" --force
-```
-
-安装到项目内的中立 Agent Skills 目录：
-
-```bash
-python scripts/install_skills.py --client agents --target ./.agents/skills --force
-```
-
-使用默认中立安装目标：
-
-```bash
-python scripts/install_skills.py --force
-```
-
-在 Codex 中安装整套 skill：
-
-```bash
-npx skills add lllllllama/ai-paper-reproduction-skills --all
-```
-
-在 Codex 中只安装 trusted reproduction orchestrator：
-
-```bash
-npx skills add lllllllama/ai-paper-reproduction-skills --skill ai-research-reproduction
-```
-
-从本地 clone 安装到 Codex：
-
-```bash
-python scripts/install_skills.py --client codex --target "$HOME/.codex/skills" --force
-```
-
-从本地 clone 安装到 Claude Code：
-
-```bash
-python scripts/install_skills.py --client claude --target "$HOME/.claude/skills" --force
-```
-
-安装到项目内的 Claude Code skills 目录：
-
-```bash
-python scripts/install_skills.py --client claude --target ./.claude/skills --force
-```
-
-Claude Code 可以根据描述自动调用这些 skills，也可以直接使用 `/ai-research-reproduction`、`/ai-research-explore`、`/safe-debug` 这样的命令。
-
-PowerShell 补充说明：
-
-- Windows PowerShell 下，上面的命令可以直接照抄运行。
-- 如果你更习惯显式 Windows 路径，也可以把 `$HOME/.codex/skills` 换成 `$env:USERPROFILE\\.codex\\skills` 这类写法。
-
-当前仓库提供的项目级 Claude Code slash commands：
-
-- `/ai-research-reproduction`
-- `/ai-research-explore`
-- `/analyze-project`
-- `/safe-debug`
 
 ## 💬 示例提示词
 
