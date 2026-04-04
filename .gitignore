@@ -1,6 +1,7 @@
 .DS_Store
 .idea/
 .vscode/
+.claude/worktrees/
 __pycache__/
 *.pyc
 *.pyo
