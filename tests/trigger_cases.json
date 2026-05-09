@@ -258,6 +258,30 @@
       "forbidden": ["analyze-project", "minimal-run-and-audit", "env-and-assets-bootstrap"]
     },
     {
+      "id": "boundary_analyze_current_project_phrase",
+      "type": "boundary",
+      "prompt": "分析当前项目 / analyze the current project: read and understand this repository, inspect model structure and training entrypoints, and do not modify code or run heavy jobs.",
+      "expected_any": ["analyze-project"],
+      "expected_top": "analyze-project",
+      "forbidden": ["ai-research-reproduction", "ai-research-explore", "explore-code", "explore-run", "safe-debug", "minimal-run-and-audit"]
+    },
+    {
+      "id": "boundary_trusted_repro_phrase",
+      "type": "boundary",
+      "prompt": "做可信复现 / trusted reproduction: reproduce this AI repository from the README end-to-end, prefer documented inference or evaluation, and write repro_outputs.",
+      "expected_any": ["ai-research-reproduction"],
+      "expected_top": "ai-research-reproduction",
+      "forbidden": ["ai-research-explore", "explore-code", "explore-run", "analyze-project", "safe-debug"]
+    },
+    {
+      "id": "boundary_current_research_explore_phrase",
+      "type": "boundary",
+      "prompt": "在 current_research 上探索: on top of current_research improved-branch@abc123, use an isolated branch to coordinate exploratory code and run changes together, try candidate variants, and rank candidates in explore_outputs.",
+      "expected_any": ["ai-research-explore"],
+      "expected_top": "ai-research-explore",
+      "forbidden": ["ai-research-reproduction", "analyze-project", "safe-debug", "explore-code", "explore-run"]
+    },
+    {
       "id": "negative_non_repo_debugging",
       "type": "negative",
       "prompt": "Debug this generic Python training loop bug and refactor the code for readability.",

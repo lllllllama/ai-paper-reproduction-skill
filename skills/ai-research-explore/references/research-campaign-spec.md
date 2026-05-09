@@ -10,7 +10,12 @@ Use `research_campaign.json` or `research_campaign.yaml` when `ai-research-explo
 - the provided SOTA table is already frozen by the researcher
 - the remaining work is campaign governance, implementation, and candidate filtering
 
-`variant_spec` still exists, but it is now the run-level part of a larger campaign.
+This file is an advanced reference. The public entrypoint only requires the
+campaign core to be frozen; the detailed blocks below are guidance for richer
+campaigns, not fields the agent must invent on every run.
+
+`variant_spec` still exists, but it is now an optional run-level part of a
+larger campaign.
 
 ## Minimal Shape
 
@@ -38,48 +43,13 @@ Use `research_campaign.json` or `research_campaign.yaml` when `ai-research-explo
       "source": "paper-or-table-url"
     }
   ],
-  "candidate_ideas": [
-    {
-      "id": "idea-lora-rank",
-      "summary": "Increase LoRA rank while keeping the decoder unchanged.",
-      "change_scope": "lora_rank",
-      "target_component": "segmentation_head",
-      "expected_upside": 0.85,
-      "implementation_risk": 0.20,
-      "eval_risk": 0.15,
-      "rollback_ease": 0.90,
-      "estimated_runtime_cost": 0.35,
-      "single_variable_fit": 0.95
-    }
-  ],
   "compute_budget": {
     "max_runtime_hours": 8
-  },
-  "baseline_gate": {
-    "abandon_gap": 2.0
-  },
-  "execution_policy": {
-    "run_selected_variants": true,
-    "max_executed_variants": 2,
-    "variant_timeout": 1800
-  },
-  "variant_spec": {
-    "current_research": "seg-branch@abc1234",
-    "base_command": "python train.py --config configs/demo.yaml",
-    "variant_axes": {
-      "lora_rank": ["4", "8"]
-    },
-    "subset_sizes": [64],
-    "short_run_steps": [100],
-    "max_variants": 2,
-    "max_short_cycle_runs": 1,
-    "primary_metric": "miou",
-    "metric_goal": "maximize"
   }
 }
 ```
 
-## Required Top-Level Fields
+## Durable Core Fields
 
 - `current_research`
   Durable anchor for the current research state.
@@ -93,13 +63,20 @@ Use `research_campaign.json` or `research_campaign.yaml` when `ai-research-explo
   The frozen evaluation contract input. Prefer a command plus an optional path.
 - `sota_reference`
   The user-provided comparison table. `ai-research-explore` treats this as authoritative input and does not prove completeness.
+- `compute_budget`
+  The bounded resource envelope for candidate-only work.
+
+## Optional Guidance Fields
+
 - `candidate_ideas`
   Preferred but optional candidate directions that the researcher already wants to consider. If omitted, or if `idea_generation.allow_synthesized_seed_ideas` stays enabled, the orchestrator may add a small number of conservative single-variable seed ideas.
 - `variant_spec`
-  The run-level candidate matrix used by `explore-run`.
+  Optional run-level candidate matrix used by `explore-run`.
 
 Optional top-level fields:
 
+- `baseline_gate`
+- `execution_policy`
 - `research_lookup`
 - `idea_policy`
 - `idea_generation`
@@ -276,6 +253,10 @@ Soft ranking combines:
 If the selected idea cannot be decomposed into implementable atomic units, `ai-research-explore` records an explicit blocker/checkpoint such as `atomic-decomposition-blocked` and stops before broader implementation or execution.
 
 ## Output Expectations
+
+The following artifacts are the full advanced campaign surface. A minimal
+campaign should produce only the files justified by the active work; do not
+inflate the run with empty artifacts just to satisfy this list.
 
 Campaign mode writes:
 

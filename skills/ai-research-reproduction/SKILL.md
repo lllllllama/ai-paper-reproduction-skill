@@ -5,135 +5,94 @@ description: Main orchestrator for README-first AI repo reproduction. Use when t
 
 # ai-research-reproduction
 
-## Use when
+## Purpose
 
-- The user wants the agent to reproduce an AI paper repository.
-- The target is a code repository with a README, scripts, configs, or documented commands.
-- The goal is a minimal trustworthy run, not unlimited experimentation.
-- The user needs standardized outputs that another human or model can audit quickly.
-- The task spans more than one stage, such as intake plus setup, or setup plus execution plus reporting.
+Use this as the trusted-lane orchestrator for README-first AI repository
+reproduction. The skill guides the agent toward a minimal trustworthy run with
+auditable evidence; it should not micromanage implementation details that the
+model can infer from the repository.
 
-## Do not use when
+Start from the shared operating principles in
+`../../references/agent-operating-principles.md`.
 
-- The task is a general literature review or paper summary.
-- The task is to design a new model, benchmark suite, or training pipeline from scratch.
-- The repository is not centered on AI or does not expose a documented reproduction path.
-- The user primarily wants a deep code refactor rather than README-first reproduction.
-- The user is explicitly asking for only one narrow phase that a sub-skill already covers cleanly.
-- The user is explicitly authorizing exploratory branch-only experimentation instead of trusted reproduction.
+## Fit
 
-## Success criteria
+Use this skill when all are true:
 
-- README is treated as the primary source of reproduction intent.
-- A minimum trustworthy target is selected and justified.
-- Documented inference is preferred over evaluation, and evaluation is preferred over training.
-- Any repo edits remain conservative, explicit, and auditable.
-- Assumptions, protocol deviations, and human decision points are surfaced rather than hidden.
-- `repro_outputs/` is generated with consistent structure and stable machine-readable fields.
-- Final user-facing explanation is short and follows the user's language when practical.
+- The target is an AI code repository with a README, scripts, configs, or
+  documented commands.
+- The request spans multiple trusted phases such as intake, setup, execution,
+  training verification, analysis, paper-gap resolution, and reporting.
+- The desired result is a small reproducible target, not broad experimentation.
 
-## Interaction and usability policy
+Do not use this skill for paper summaries, generic environment setup, isolated
+repo scanning, standalone command execution, open-ended research design, or
+explicit candidate-only exploration.
 
-- Keep the workflow simple enough for a new user to understand quickly.
-- Prefer short, concrete plans over exhaustive research.
-- Expose commands, assumptions, blockers, and evidence.
-- Avoid turning the skill into an opaque automation layer.
-- Preserve a low learning cost for both humans and downstream agents.
+## Trusted Target Selection
 
-## Language policy
-
-- Human-readable Markdown outputs should follow the user's language when it is clear.
-- If the user's language is unclear, default to concise English.
-- Machine-readable fields, filenames, keys, and enum values stay in stable English.
-- Paths, package names, CLI commands, config keys, and code identifiers remain unchanged.
-
-See `references/language-policy.md`.
-
-## Reproduction policy
-
-Core priority order:
+Choose the smallest target that can honestly demonstrate repository-grounded
+reproduction:
 
 1. documented inference
 2. documented evaluation
 3. documented training startup or partial verification
-4. full training only when the user explicitly asks later
+4. full training only after explicit user confirmation
 
-Rules:
-
-- README-first: use repository files to clarify, not casually override, the README.
-- Aim for minimal trustworthy reproduction rather than maximum task coverage.
-- Treat smoke tests, startup verification, and early-step checks as valid training evidence when full training is not appropriate.
-- In trusted reproduction, a documented training command should first be checked through startup verification or a short monitoring window, then paused for explicit human confirmation before broader training continues.
-- In explicitly authorized explore-lane execution, the training record can continue without the trusted-lane confirmation pause, but it must stay isolated from trusted conclusions.
-- Record unresolved gaps rather than fabricating confidence.
-
-## Patch policy
-
-- Prefer no code changes.
-- Prefer safer adjustments first:
-  - command-line arguments
-  - environment variables
-  - path fixes
-  - dependency version fixes
-  - dependency file fixes such as `requirements.txt` or `environment.yml`
-- Avoid changing:
-  - model architecture
-  - core inference semantics
-  - core training logic
-  - loss functions
-  - experiment meaning
-- If repository files must change:
-  - create a patch branch first using `repro/YYYY-MM-DD-short-task`
-  - apply low-risk changes before medium-risk changes
-  - avoid high-risk changes by default
-  - commit only verified groups of changes
-  - keep verified patch commits sparse, usually `0-2`
-  - use commit messages in the form `repro: <scope> for documented <command>`
-
-See `references/patch-policy.md`.
-
-## Research safety boundary
-
-- Preserve experiment meaning over convenience.
-- Do not silently change dataset, split, checkpoint, preprocessing, metric, loss, or model semantics.
-- Distinguish direct evidence from inference and from user-approved decisions.
-- Prefer a recorded blocker over an unrecorded workaround.
-- Escalate for explicit human review before any change that could alter scientific meaning or reported conclusions.
-
-See `references/research-safety-principles.md`.
+Treat README guidance as the primary reproduction intent. Use repository files
+to clarify the README, not to silently replace it. When the README and paper
+conflict, record the conflict and use `paper-context-resolver` only for the
+narrow reproduction-critical gap.
 
 ## Workflow
 
-1. Read README and repo signals.
-2. Call `repo-intake-and-plan` to scan the repository and extract documented commands.
-3. Select the smallest trustworthy reproduction target.
-4. Call `env-and-assets-bootstrap` to prepare environment assumptions and asset paths.
-5. Call `analyze-project` only when repo structure, insertion points, or suspicious implementation patterns need a read-only pass before continuing.
-6. Run a conservative smoke check or documented inference or evaluation command with `minimal-run-and-audit`.
-7. If the selected trustworthy target is documented training startup, short-run verification, or resume, hand execution to `run-train` instead of `minimal-run-and-audit`.
-8. When training is selected inside trusted reproduction, let `run-train` capture the startup evidence first, then surface a human review checkpoint before any fuller training claim.
-9. Stop for human review if protocol meaning, model semantics, or result interpretation would otherwise be changed implicitly.
-10. Use `paper-context-resolver` only if README and repo files leave a narrow reproduction-critical gap that blocks the current target.
-11. Never auto-route into `explore-code` or `explore-run`; exploration requires explicit user authorization.
-12. Write the standardized outputs with evidence, assumptions, deviations, and next safe action.
-13. Give the user a short final note in the user's language.
+1. Read the README and nearby repo signals.
+2. Use `repo-intake-and-plan` to extract documented commands and candidate
+   targets.
+3. Select and justify the minimum trustworthy target.
+4. Use `env-and-assets-bootstrap` only for target-specific environment,
+   checkpoint, dataset, and cache assumptions.
+5. Use `analyze-project` only when structure, insertion points, or suspicious
+   implementation patterns need read-only clarification.
+6. Use `minimal-run-and-audit` for documented inference, evaluation, smoke, or
+   sanity execution.
+7. Use `run-train` instead when the selected trusted target is training startup,
+   short-run verification, full kickoff, or resume.
+8. Pause for human review before fuller training claims or any change that could
+   alter dataset, split, checkpoint, preprocessing, metric, loss, model
+   semantics, or result interpretation.
+9. Write the standardized outputs and give a concise final note in the user's
+   language when practical.
 
-## Required outputs
+## Patch Boundary
 
-Always target:
+Prefer no repository edits. If edits are needed, keep them conservative and
+auditable:
+
+- Try command-line arguments, environment variables, path fixes, dependency
+  version fixes, or dependency-file fixes before code changes.
+- Avoid changing model architecture, core inference semantics, training logic,
+  loss functions, or experiment meaning.
+- If repository files must change, create a branch named
+  `repro/YYYY-MM-DD-short-task`, keep verified patch commits sparse, and record
+  README-fidelity impact in `PATCHES.md`.
+
+See `references/patch-policy.md`.
+
+## Outputs
+
+Always target `repro_outputs/`:
 
 ```text
-repro_outputs/
-  SUMMARY.md
-  COMMANDS.md
-  LOG.md
-  status.json
-  PATCHES.md   # only if patches were applied
+SUMMARY.md
+COMMANDS.md
+LOG.md
+status.json
+PATCHES.md   # only if patches were applied
 ```
 
-Use the templates under `assets/` and the field rules in `references/output-spec.md`.
-
-## Reporting policy
+Use the templates under `assets/` and the field rules in
+`references/output-spec.md`.
 
 - Put the shortest high-value summary in `SUMMARY.md`.
 - Put copyable commands in `COMMANDS.md`.
@@ -142,12 +101,12 @@ Use the templates under `assets/` and the field rules in `references/output-spec
 - Put branch, commit, validation, and README-fidelity impact in `PATCHES.md` when needed.
 - Distinguish verified facts from inferred guesses.
 
-## Maintainability notes
+## Reference Loading
 
-- Keep this skill narrow: README-first AI repo reproduction only.
-- Push specialized logic into sub-skills or helper scripts.
-- Prefer stable templates and simple schemas over ad hoc prose.
-- Keep machine-readable outputs backward compatible when possible.
-- Add new evidence sources only when they improve auditability without raising learning cost.
-- Treat `repo-intake-and-plan` and `paper-context-resolver` as narrow helpers, not primary public entrypoints.
+- Load `references/language-policy.md` when writing human-readable outputs.
+- Load `references/research-safety-principles.md` before protocol-sensitive
+  decisions.
+- Load `references/patch-policy.md` before modifying repository files.
+- Keep specialized logic in sub-skills, scripts, templates, or references rather
+  than expanding this entrypoint.
 

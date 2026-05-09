@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Iterable, List, Mapping
 
 
+SHARED_REFERENCE_FILES = [
+    "agent-operating-principles.md",
+]
+
+
 def default_target(client: str, env: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
     env_map = os.environ if env is None else env
     home_path = (home or Path.home()).expanduser()
@@ -60,6 +65,32 @@ def copy_skill(source: Path, target: Path) -> None:
     )
 
 
+def install_shared_references(repo_root: Path, target_root: Path, force: bool) -> List[Path]:
+    source_root = repo_root / "references"
+    target_reference_root = target_root.parent / "references"
+    installed: List[Path] = []
+
+    for filename in SHARED_REFERENCE_FILES:
+        source_path = source_root / filename
+        target_path = target_reference_root / filename
+        if not source_path.exists():
+            raise FileNotFoundError(f"Shared reference does not exist: {source_path}")
+        if target_path.exists():
+            if target_path.read_bytes() == source_path.read_bytes():
+                installed.append(target_path)
+                continue
+            if not force:
+                raise FileExistsError(
+                    f"Shared reference already exists with different content: {target_path}. "
+                    "Re-run with --force to replace it."
+                )
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target_path)
+        installed.append(target_path)
+
+    return installed
+
+
 def install_skills(
     repo_root: Path,
     target_root: Path,
@@ -69,6 +100,7 @@ def install_skills(
     skills_root = repo_root / "skills"
     skill_dirs = discover_skills(skills_root)
     target_root.mkdir(parents=True, exist_ok=True)
+    install_shared_references(repo_root, target_root, force)
 
     installed: List[Path] = []
     for skill_dir in skill_dirs:

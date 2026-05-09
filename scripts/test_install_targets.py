@@ -10,6 +10,23 @@ from pathlib import Path
 from install_skills import default_target, install_skills
 
 
+SHARED_PRINCIPLES_REF = "../../references/agent-operating-principles.md"
+
+
+def assert_shared_principles_resolve(installed: list[Path]) -> None:
+    checked = 0
+    for skill_path in installed:
+        skill_text = (skill_path / "SKILL.md").read_text(encoding="utf-8")
+        if SHARED_PRINCIPLES_REF not in skill_text:
+            continue
+        checked += 1
+        reference_path = (skill_path / SHARED_PRINCIPLES_REF).resolve()
+        if not reference_path.exists():
+            raise AssertionError(f"shared operating principles reference does not resolve for {skill_path.name}")
+    if checked == 0:
+        raise AssertionError("installer test did not find any skill using the shared operating principles reference")
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     temp_root = Path(tempfile.mkdtemp(prefix="codex-install-targets-", dir=repo_root))
@@ -41,9 +58,13 @@ def main() -> int:
             raise AssertionError("installer did not copy the full skill set")
         if not all((path / "SKILL.md").exists() for path in installed):
             raise AssertionError("installer lost SKILL.md during copy")
+        shared_reference = temp_root / "references" / "agent-operating-principles.md"
+        if not shared_reference.exists():
+            raise AssertionError("installer did not copy the shared operating principles reference")
+        assert_shared_principles_resolve(installed)
 
         print("ok: True")
-        print("checks: 7")
+        print("checks: 9")
         print("failures: 0")
         return 0
     finally:

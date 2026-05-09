@@ -320,8 +320,68 @@ def main() -> int:
         if status["fidelity_summary"]["unit_count"] <= 0:
             raise AssertionError("ai-research-explore status lost fidelity summary")
 
+        minimal_campaign = {
+            "current_research": "minimal-branch@def5678",
+            "task_family": "segmentation",
+            "dataset": "DemoSeg",
+            "benchmark": {"name": "DemoBench", "primary_metric": "miou", "metric_goal": "maximize"},
+            "evaluation_source": {
+                "command": "python eval.py --config configs/demo.yaml",
+                "path": "eval.py",
+                "primary_metric": "miou",
+                "metric_goal": "maximize",
+            },
+            "sota_reference": [
+                {"name": "Provided SOTA", "metric": "miou", "value": 80.0, "source": "demo-paper"}
+            ],
+            "candidate_ideas": [
+                {
+                    "id": "idea-minimal-lora",
+                    "summary": "Increase adapter capacity without changing the decoder contract.",
+                    "change_scope": "lora_rank",
+                    "target_component": "segmentation_head",
+                    "expected_upside": 0.75,
+                    "implementation_risk": 0.2,
+                    "eval_risk": 0.15,
+                    "rollback_ease": 0.9,
+                    "estimated_runtime_cost": 0.25,
+                    "single_variable_fit": 0.95,
+                }
+            ],
+            "compute_budget": {"max_runtime_hours": 1},
+        }
+        minimal_campaign_path = temp_root / "minimal-research-campaign.json"
+        minimal_campaign_path.write_text(json.dumps(minimal_campaign, indent=2, ensure_ascii=False), encoding="utf-8")
+        minimal_output_dir = temp_root / "minimal_case" / "explore_outputs"
+        minimal_result = subprocess.run(
+            [
+                sys.executable,
+                str(orchestrator),
+                "--repo",
+                str(sample_repo),
+                "--research-campaign-json",
+                str(minimal_campaign_path),
+                "--output-dir",
+                str(minimal_output_dir),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        minimal_payload = json.loads(minimal_result.stdout)
+        if minimal_payload["campaign"]["variant_spec"].get("base_command") != minimal_campaign["evaluation_source"]["command"]:
+            raise AssertionError("minimal campaign did not use evaluation_source.command as the default base command")
+        if minimal_payload["campaign"]["variant_spec"].get("base_command_source") != "evaluation_source":
+            raise AssertionError("minimal campaign did not record the base command source")
+        if minimal_payload["resource_plan"]["short_run_feasibility"] == "blocked":
+            raise AssertionError("minimal campaign was blocked by missing variant_spec.base_command")
+        if not minimal_payload["selected_idea"] or minimal_payload["selected_idea"]["id"] != "idea-minimal-lora":
+            raise AssertionError("minimal campaign without variant_spec did not preserve candidate ranking")
+        if minimal_payload["human_checkpoint_state"] == "short-run-feasibility-blocked":
+            raise AssertionError("minimal campaign without variant_spec incorrectly requested a feasibility checkpoint")
+
         print("ok: True")
-        print("checks: 48")
+        print("checks: 53")
         print("failures: 0")
         return 0
     finally:

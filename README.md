@@ -11,7 +11,7 @@
   <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-0a7ea4?style=flat-square">
   <img alt="skills" src="https://img.shields.io/badge/skills-11-8b949e?style=flat-square">
   <img alt="public skills" src="https://img.shields.io/badge/public%20skills-9-0969da?style=flat-square">
-  <img alt="tests" src="https://img.shields.io/badge/tests-42%20scripts-8250df?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-43%20scripts-8250df?style=flat-square">
   <img alt="clients" src="https://img.shields.io/badge/clients-Agent%20Skills%20%C2%B7%20Codex%20%C2%B7%20Claude%20Code-6f42c1?style=flat-square">
 </p>
 
@@ -34,6 +34,13 @@ This repository is built around one default rule: `trusted by default`.
 - Trusted outputs are auditable and durable.
 - Explore outputs are candidate-only and disposable.
 
+Shared operating principles live in
+[references/agent-operating-principles.md](references/agent-operating-principles.md).
+They keep the skills focused on high-level guidance: think before acting, keep
+the solution small, change only what is necessary, and work toward verifiable
+goals. They are guardrails, not a detailed script for every implementation
+choice.
+
 ## 🧭 Current Repo Snapshot
 
 This repository currently ships:
@@ -41,7 +48,7 @@ This repository currently ships:
 - `11` skills total: `9` public skills and `2` helper skills.
 - `6` trusted-lane public skills and `3` explore-lane public skills.
 - `4` project-scoped Claude Code command wrappers under `.claude/commands/`.
-- `42` Python test scripts, including `15` focused `research-explore` regressions.
+- `45` Python scripts, including `43` test scripts with focused `research-explore` regressions and document-structure checks.
 - A third-scenario explore chain that now includes bounded idea-seed generation, explicit idea score breakdowns, atomic idea decomposition, and implementation-fidelity evidence split into planned, heuristic, and observed layers.
 - A documented and tested workflow intended to be usable from both Windows PowerShell and Linux shells.
 
@@ -208,6 +215,26 @@ Helpers are intentionally narrow and should usually be orchestrator-invoked rath
 
 See [references/client-compatibility-policy.md](references/client-compatibility-policy.md).
 
+## 🔁 Lifecycle View
+
+The repository follows a lifecycle-oriented routing model:
+
+```mermaid
+flowchart LR
+    A[Understand] --> B[Reproduce]
+    B --> C[Set up]
+    C --> D[Run or train]
+    D --> E[Debug]
+    E --> F[Report]
+    B -. explicit only .-> G[Explore]
+    G --> H[Rank candidates]
+    H --> F
+```
+
+This lifecycle is intentionally shallow. It helps the agent choose the right
+lane and evidence target without forcing a fixed implementation sequence inside
+each repository.
+
 ## 🗺️ Routing Overview
 
 ```mermaid
@@ -233,19 +260,21 @@ flowchart TD
 
 ## 🧠 Third-Scenario Explore Flow
 
-`ai-research-explore` is optimized for the third scenario: the researcher has already frozen the task family, dataset, evaluation method, and provided SOTA references, and wants governed exploration on top of `current_research`.
+`ai-research-explore` is optimized for the third scenario: the researcher has
+already frozen the task family, dataset, evaluation method, and provided SOTA
+references, then explicitly authorizes candidate-only exploration on top of
+`current_research`.
 
 ```mermaid
 flowchart LR
-    A[current_research + research_campaign] --> B[analysis_outputs and sources]
-    B --> C[IDEA_SEEDS.json<br/>bounded seed expansion]
-    C --> D[IDEA_SCORES.json<br/>IDEA_EVALUATION.md]
-    D --> E[ATOMIC_IDEA_MAP.md and .json]
-    E --> F[IMPLEMENTATION_FIDELITY.md and .json]
-    F --> G{Checkpoint and manifest clear?}
-    G -- No --> H[Stop with candidate-only blockers]
-    G -- Yes --> I[bounded short-cycle runs]
-    I --> J[explore_outputs<br/>candidate-only summary]
+    A[current_research + frozen campaign] --> B[Outer loop:<br/>understand, source, gate]
+    B --> C{candidate worth trying?}
+    C -- No --> D[Stop with blocker or checkpoint]
+    C -- Yes --> E[Inner loop:<br/>bounded change or run]
+    E --> F[Smoke and evidence]
+    F --> G[Rank candidate]
+    G --> B
+    G --> H[explore_outputs<br/>candidate-only summary]
 ```
 
 Current implementation highlights:
@@ -256,7 +285,10 @@ Current implementation highlights:
 - Implementation fidelity distinguishes planned, heuristic, and observed implementation evidence in `analysis_outputs/IMPLEMENTATION_FIDELITY.md` and `analysis_outputs/IMPLEMENTATION_FIDELITY.json`.
 - Executor-observed evidence now comes from emitted `changed_files`, `new_files`, `deleted_files`, and `touched_paths` rather than planned target placeholders.
 
-The explore lane must not claim trusted reproduction success, global benchmark completeness, or verified novelty.
+The two-loop rhythm is a guide, not a never-stop autonomous agent. Exploration
+stops at explicit blockers, unclear scientific meaning, exhausted budget,
+missing anchors, or human checkpoints. The explore lane must not claim trusted
+reproduction success, global benchmark completeness, or verified novelty.
 
 ## 📦 Public Skill Matrix
 
@@ -281,6 +313,7 @@ This repository does not publish a single line-coverage percentage in the README
 | Coverage area | Current scope | Representative checks |
 |---|---|---|
 | Registry, installation, and wrappers | File-level integrity, install targets, Claude wrappers, README routing | `test_skill_registry.py`, `test_install_targets.py`, `test_claude_command_wrappers.py`, `test_readme_selection.py` |
+| Skill principles and concision | Shared operating principles, lifecycle docs, and compact main entrypoints | `test_operating_principles_structure.py` |
 | Trusted lane rendering and routing | Reproduction, training, analysis, debug, lane routing | `test_output_rendering.py`, `test_train_output_rendering.py`, `test_analysis_output_rendering.py`, `test_safe_debug_output_rendering.py`, `test_training_lane_routing.py` |
 | Explore lane orchestration | Dry run, campaign flow, checkpoint, abandon path, artifact consistency, execution feasibility | `test_research_explore_dry_run.py`, `test_research_explore_campaign_flow.py`, `test_research_explore_campaign_checkpoint.py`, `test_research_explore_campaign_abandon.py`, `test_research_explore_artifact_consistency.py` |
 | Explore idea and implementation contracts | Idea seeds, atomic decomposition, implementation fidelity, contract shape | `test_idea_seed_generation.py`, `test_atomic_idea_decomposition.py`, `test_implementation_fidelity.py`, `test_research_explore_contracts.py` |
@@ -308,17 +341,21 @@ Coverage notes:
 
 `ai-research-explore` still accepts a plain `variant_spec.json`, but the preferred input for the third scenario is `research_campaign.json` or `research_campaign.yaml`.
 
-The campaign should freeze:
+The durable campaign core is:
 
+- `current_research`
 - `task_family`
 - `dataset`
 - `benchmark`
 - `evaluation_source`
 - `sota_reference`
 - `compute_budget`
-- `variant_spec`
 
-`candidate_ideas` is preferred but optional. `ai-research-explore` preserves researcher ideas and may also add a small number of bounded synthesized or hybrid seed ideas for search-space expansion. Generated seeds stay bound to `current_research`, `task_family`, `dataset`, and the frozen `evaluation_source`.
+`candidate_ideas` and `variant_spec` are useful, but they are not required in
+every campaign. `ai-research-explore` preserves researcher ideas and may add a
+small number of bounded synthesized or hybrid seed ideas for search-space
+expansion. Generated seeds stay bound to `current_research`, `task_family`,
+`dataset`, and the frozen `evaluation_source`.
 
 Optional campaign blocks:
 
@@ -388,6 +425,7 @@ Run the repository checks:
 python scripts/validate_repo.py
 python scripts/test_skill_registry.py
 python scripts/test_trigger_boundaries.py
+python scripts/test_operating_principles_structure.py
 python scripts/test_claude_command_wrappers.py
 python scripts/test_readme_selection.py
 ```

@@ -5,6 +5,10 @@ description: Explore-lane experimental execution skill for deep learning researc
 
 # explore-run
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should guide
+candidate run planning while preserving model judgment about the active repo.
+
 ## When to apply
 
 - When the researcher explicitly authorizes exploratory runs.

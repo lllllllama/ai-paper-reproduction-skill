@@ -5,6 +5,10 @@ description: Explore-lane code adaptation skill for deep learning research repos
 
 # explore-code
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should guide
+bounded candidate code work without over-prescribing implementation details.
+
 ## When to apply
 
 - When the researcher explicitly authorizes exploratory code changes on an isolated branch or worktree.

@@ -5,6 +5,11 @@ description: Trusted-lane training execution skill for deep learning research re
 
 # run-train
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should keep
+training evidence bounded while leaving repository-specific monitoring details
+to the model.
+
 ## When to apply
 
 - When the training command has already been selected and should be executed conservatively.

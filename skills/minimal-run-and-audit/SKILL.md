@@ -5,6 +5,10 @@ description: Trusted-lane execution and reporting skill for README-first AI repo
 
 # minimal-run-and-audit
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should make run
+evidence auditable without turning every command into a rigid protocol.
+
 ## When to apply
 
 - After a reproduction target and setup plan exist.

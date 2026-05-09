@@ -5,79 +5,105 @@ description: Explore-lane end-to-end orchestrator for the third research scenari
 
 # ai-research-explore
 
+## Purpose
+
+Use this as the explore-lane orchestrator after the researcher explicitly
+authorizes candidate-only work on top of a durable `current_research` anchor.
+The skill governs research exploration; it does not promise autonomous
+discovery, global benchmark completeness, novelty proof, or trusted reproduction
+success.
+
+Start from the shared operating principles in
+`../../references/agent-operating-principles.md`.
+
+## Fit
+
+Use this skill only when the request has both:
+
+- Explicit exploration authorization such as candidate-only work, isolated
+  branch or worktree, sweep, several variants, or exploratory ranking.
+- A durable `current_research` context such as a branch, commit, checkpoint,
+  run record, or already-trained local model state.
+
+Keep narrow code-only requests on `explore-code`. Keep narrow run-only requests
+on `explore-run`. Keep passive repository analysis on `analyze-project`. Keep
+README-first reproduction on `ai-research-reproduction`.
+
+## Research Rhythm
+
+Use a two-loop rhythm:
+
+- Outer loop: understand the repository, freeze task/dataset/evaluation/budget,
+  preserve user ideas, map sources, gate ideas, and decide whether the next
+  experiment is worth running.
+- Inner loop: make one bounded candidate change or run, smoke-check it, collect
+  evidence, rank it against the current anchor, and either stop or return to the
+  outer loop with the new evidence.
+
+This rhythm is a guide, not a rigid autonomous loop. Stop at explicit blockers,
+unclear scientific meaning, exhausted budget, missing anchor/evaluation, or a
+human checkpoint.
+
 ## Workflow
 
-- Accept either a legacy `variant_spec` flow or a higher-level `research_campaign` flow.
-- Confirm `current_research` in a durable form such as a branch, commit, checkpoint, run record, or already-trained local model state.
-- Keep all exploration on an isolated experiment branch or worktree.
-- In campaign mode, always build repo-understanding artifacts that both the AI and the researcher can audit.
-- Use `analyze-project` to produce `analysis_outputs/RESEARCH_MAP.md`, `CHANGE_MAP.md`, and `EVAL_CONTRACT.md`.
-- Run the internal free-first, cache-first, provider-optional research lookup pass and cache auditable records into `sources/`; the built-in provider set is intentionally small and should be treated as bounded source resolution, not open-ended literature search.
-- Preserve researcher-provided `candidate_ideas`, then optionally expand the search space with a bounded idea-seed generation pass that writes `analysis_outputs/IDEA_SEEDS.json`.
-- Convert the merged bounded idea pool into a structured improvement bank and hypothesis cards.
-- Use `env-and-assets-bootstrap` only when the environment or assets tied to `current_research` are still unclear.
-- Run a baseline gate before candidate training when a campaign includes evaluation details and provided SOTA references.
-- Run an idea gate before implementation; prefer one explicit single-variable idea over broad simultaneous changes, require source-backed cards, and keep final selection inside the researcher pool when a researcher idea passes hard gates.
-- Use `explore-code` for bounded exploratory code adaptation.
-- Build source mapping, heuristic interface diff, minimal reversible patch planning, and split static/runtime smoke validation before wider execution.
-- Decompose the selected idea into atomic academic concepts with `analysis_outputs/ATOMIC_IDEA_MAP.md` and `analysis_outputs/ATOMIC_IDEA_MAP.json`; if no implementable atomic units can be derived, stop for a checkpoint instead of pretending the idea is ready.
-- Build implementation-fidelity expectations and summaries in `analysis_outputs/IMPLEMENTATION_FIDELITY.md` and `analysis_outputs/IMPLEMENTATION_FIDELITY.json`; distinguish `directly_verified`, `heuristic`, and `not_checked`.
-- Use `explore-run` for short-cycle trials, sweeps, and pre-execution candidate ranking.
-- Run execution feasibility and resource checks before broader candidate runs.
-- Let execution hand off to `minimal-run-and-audit` or `run-train` only when the exploratory plan needs real command execution.
-- Build an `experiment_manifest` before wider execution and keep supporting changes mechanical and reversible.
-- Write candidate-only outputs to `explore_outputs/`; never present the result as trusted reproduction success or a verified novelty/SOTA claim.
+1. Confirm `current_research` and explicit explore-lane authorization.
+2. Accept either legacy `variant_spec` or higher-level `research_campaign`.
+3. In campaign mode, freeze the task, dataset, benchmark, evaluation source,
+   SOTA reference, and budget before candidate work.
+4. Build only the repo-understanding artifacts needed for the current campaign,
+   usually through `analyze-project`.
+5. Run bounded, cache-first source lookup when source support matters; treat it
+   as source resolution, not an open-ended literature search.
+6. Preserve researcher-provided ideas, optionally add a small bounded set of
+   single-variable seed ideas, and rank ideas with explicit gates and score
+   breakdowns.
+7. Prefer one clear candidate at a time. Use `explore-code` for bounded code
+   adaptation and `explore-run` for short-cycle trials or sweeps.
+8. Use `minimal-run-and-audit` or `run-train` only when the exploratory plan
+   requires real execution evidence.
+9. Write candidate-only outputs to `analysis_outputs/`, `sources/`, and
+   `explore_outputs/` as appropriate; never present exploratory gains as trusted
+   reproduction success.
 
-## Ranking Semantics
+## Ranking and Evidence
 
-- Before execution, exploratory candidates should be prioritized with three factors: `cost`, `success_rate`, and `expected_gain`.
-- Prefer using `selection_weights` in the variant spec when the researcher wants to rebalance those three factors.
-- Keep budget limits explicit through `max_variants` and `max_short_cycle_runs`.
-- After candidates actually run, rank results by real execution evidence: `status` first, then `primary_metric` and `metric_goal` when provided.
-- In campaign mode, rank ideas separately from run variants. Hard gates should screen `single_variable_fit`, `interface_fit`, `patch_surface`, `dependency_drag`, `eval_risk`, and short-run feasibility before soft ranking.
-- Soft idea ranking should use explicit score breakdowns including `novelty_estimate`, `groundedness`, `source_support_strength`, `interface_fit`, `patch_surface`, `dependency_drag`, `ablation_clarity`, and `implementation_story_clarity`, together with the existing upside/risk fields.
-- If the active top-two ideas are too close, keep the human checkpoint rather than silently picking one.
+- Before execution, prioritize candidates by expected gain, cost, success
+  likelihood, patch surface, dependency drag, evaluation risk, and rollback
+  ease.
+- After execution, rank by real evidence first: command status, observed
+  metrics, artifacts, changed paths, smoke results, and reproducibility notes.
+- Keep researcher-provided `evaluation_source` and `sota_reference` frozen for
+  the campaign; do not claim they are globally complete.
+- If the top ideas are too close or the implementation cannot be decomposed into
+  auditable units, stop for a checkpoint instead of silently choosing.
 
 ## Campaign Inputs
 
-- `research_campaign` is the preferred input for the third scenario.
-- It should include:
-  - `current_research`
-  - `task_family`
-  - `dataset`
-  - `benchmark`
-  - `evaluation_source`
-  - `sota_reference`
-- `candidate_ideas`
+`research_campaign` is preferred for the third scenario, but it should stay
+minimal. The durable core is:
+
+- `current_research`
+- `task_family`
+- `dataset`
+- `benchmark`
+- `evaluation_source`
+- `sota_reference`
 - `compute_budget`
-- `research_lookup`
-- `idea_policy`
-- `idea_generation`
-- `source_constraints`
-- `feasibility_policy`
-- `baseline_gate`
-- `execution_policy`
-- `variant_spec`
-- Treat user-provided `evaluation_source` and `sota_reference` as frozen inputs for this campaign; do not claim they are globally complete.
 
-## Variant Spec Hints
+Use `candidate_ideas`, `variant_spec`, `research_lookup`, `idea_policy`,
+`idea_generation`, `source_constraints`, `feasibility_policy`, `baseline_gate`,
+and `execution_policy` as optional guidance, not as fields the agent must fill
+for every campaign. See `references/research-campaign-spec.md` for the advanced
+schema and artifact expectations.
 
-- Use `current_research` to anchor the exploratory context.
-- Use `variant_axes`, `subset_sizes`, and `short_run_steps` to describe the candidate matrix.
-- Use `selection_weights` to tune the pre-execution balance between `cost`, `success_rate`, and `expected_gain`.
-- Use `primary_metric` and `metric_goal` to control post-execution candidate ranking.
+## Reference Loading
 
-## Boundaries
-
-- This skill owns end-to-end exploratory orchestration on top of `current_research`.
-- This skill is intentionally narrow: it governs implementation, execution, and comparison after the researcher has already constrained the task.
-- Keep narrow code-only asks on `explore-code`.
-- Keep narrow run-only asks on `explore-run`.
-- Do not require any skill outside this repository.
-- Do not promise automatic benchmark completeness, novelty proof, or final human-verified SOTA claims.
-- Treat lookup evidence as layered: `external_provider` is strongest, `parsed_locator` and `repo_local_extracted` are weaker support, and `seed_only` must not be treated as strong research evidence.
-
-## Notes
-
-Use `references/ai-research-explore-policy.md`, `references/research-campaign-spec.md`, `../../references/explore-variant-spec.md`, `scripts/orchestrate_explore.py`, and `scripts/write_outputs.py`.
+- Load `references/ai-research-explore-policy.md` for lane safety and candidate
+  semantics.
+- Load `references/research-campaign-spec.md` only when a campaign file is
+  present or the user asks for third-scenario campaign governance.
+- Load `../../references/explore-variant-spec.md` for run-level variant matrix
+  details.
+- Use `scripts/orchestrate_explore.py` and `scripts/write_outputs.py` for the
+  existing deterministic artifact workflow.
 

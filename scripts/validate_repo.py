@@ -29,6 +29,7 @@ ROOT_REQUIRED_FILES = [
     "scripts/install_skills.py",
     "scripts/validate_repo.py",
     "scripts/test_skill_registry.py",
+    "references/agent-operating-principles.md",
     "references/skill-registry.json",
     "references/client-compatibility-policy.md",
     "references/trigger-boundary-policy.md",
@@ -63,6 +64,7 @@ ROOT_REQUIRED_TESTS = [
     "scripts/test_analysis_output_rendering.py",
     "scripts/test_safe_debug_output_rendering.py",
     "scripts/test_claude_command_wrappers.py",
+    "scripts/test_operating_principles_structure.py",
     "tests/trigger_cases.json",
     "tests/readme_selection_cases.json",
 ]

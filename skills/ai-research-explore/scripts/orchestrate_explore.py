@@ -310,6 +310,25 @@ def normalize_evaluation_source(raw: Any, variant_spec: Dict[str, Any]) -> Dict[
     }
 
 
+def bind_evaluation_command_to_variant_spec(
+    variant_spec: Dict[str, Any],
+    evaluation_source: Dict[str, Any],
+) -> Dict[str, Any]:
+    if variant_spec.get("base_command") or not evaluation_source.get("command"):
+        return variant_spec
+
+    normalized = dict(variant_spec)
+    normalized["base_command"] = str(evaluation_source["command"]).strip()
+    normalized["base_command_source"] = "evaluation_source"
+    if evaluation_source.get("primary_metric") and not normalized.get("primary_metric"):
+        normalized["primary_metric"] = evaluation_source["primary_metric"]
+    if evaluation_source.get("metric_goal") and not normalized.get("metric_goal"):
+        normalized["metric_goal"] = evaluation_source["metric_goal"]
+    if evaluation_source.get("execution_kind") and not normalized.get("execution_kind"):
+        normalized["execution_kind"] = evaluation_source["execution_kind"]
+    return normalized
+
+
 def normalize_sota_reference(items: Any, primary_metric: Optional[str], metric_goal: str) -> List[Dict[str, Any]]:
     if not isinstance(items, list):
         return []
@@ -523,6 +542,7 @@ def normalize_campaign(args: argparse.Namespace) -> Tuple[Dict[str, Any], bool]:
         )
 
     evaluation_source = normalize_evaluation_source(raw_campaign.get("evaluation_source", {}), variant_spec)
+    variant_spec = bind_evaluation_command_to_variant_spec(variant_spec, evaluation_source)
     metric_goal = normalize_metric_goal(evaluation_source.get("metric_goal") or variant_spec.get("metric_goal"))
     candidate_ideas = normalize_candidate_ideas(
         raw_campaign.get("candidate_ideas", []),

@@ -5,6 +5,10 @@ description: Environment and assets sub-skill for README-first AI repo reproduct
 
 # env-and-assets-bootstrap
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should keep setup
+planning conservative while leaving environment-specific judgment to the model.
+
 ## When to apply
 
 - After repo intake identifies a credible reproduction target.

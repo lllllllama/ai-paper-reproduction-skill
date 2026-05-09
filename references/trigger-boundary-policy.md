@@ -17,6 +17,18 @@ Narrower skills should trigger only for explicitly narrower requests:
 - code-only exploration
 - run-only exploration
 
+When a prompt asks to "analyze the current project" or "understand this repo"
+without active execution or modification, prefer `analyze-project` over both
+main orchestrators.
+
+When a prompt asks for a trusted reproduction from the README, prefer
+`ai-research-reproduction` and do not route into exploration.
+
+When a prompt asks to explore on top of a durable `current_research` anchor and
+mentions coordinated candidate code and run work, prefer `ai-research-explore`.
+If the request is only code adaptation, prefer `explore-code`; if it is only a
+sweep or short-cycle run, prefer `explore-run`.
+
 ## Design rule for front matter descriptions
 
 Each `description` should contain both:

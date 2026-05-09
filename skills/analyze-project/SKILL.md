@@ -5,6 +5,10 @@ description: Trusted-lane analysis skill for deep learning research repositories
 
 # analyze-project
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should guide
+read-only analysis without constraining the model's project-specific reasoning.
+
 ## When to apply
 
 - The user wants to understand a deep learning repository before changing it.

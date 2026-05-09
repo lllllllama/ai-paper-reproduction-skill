@@ -5,6 +5,11 @@ description: Trusted-lane debug skill for deep learning research work. Use when 
 
 # safe-debug
 
+Use the shared operating principles in
+`../../references/agent-operating-principles.md`; this skill should guide
+conservative diagnosis without blocking the model from finding the local root
+cause.
+
 ## When to apply
 
 - The user provides a traceback, terminal error, or concrete training or inference failure symptom.
